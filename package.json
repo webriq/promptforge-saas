@@ -1,0 +1,21 @@
+{
+  "name": "promptforge-saas",
+  "version": "0.0.1",
+  "description": "PromptForge SaaS using Supabase",
+  "main": "index.js",
+  "scripts": {
+    "start": "supabase start",
+    "stop": "supabase stop"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "promptforge",
+    "supabase",
+    "saas"
+  ],
+  "author": "WebriQ",
+  "license": "MIT",
+  "packageManager": "pnpm@10.10.0"
+}

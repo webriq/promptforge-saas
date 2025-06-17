@@ -1,0 +1,6 @@
+# Supabase
+.branches
+.temp
+
+# dotenvx
+.env.*
