@@ -37,8 +37,11 @@ Deno.serve(async (req) => {
     const { error: userMsgError } = await supabaseAdmin.from("chat_messages")
       .insert({
         session_id: sessionId,
-        role: "user",
-        content: message,
+        messages: JSON.stringify([{
+          sender: "user",
+          content: message,
+          timestamp: new Date().toISOString(),
+        }]),
         created_at: new Date().toISOString(),
       });
     if (userMsgError) throw userMsgError;
@@ -81,8 +84,11 @@ Deno.serve(async (req) => {
       "chat_messages",
     ).insert({
       session_id: sessionId,
-      role: "assistant",
-      content: assistantText,
+      messages: JSON.stringify([{
+        sender: "assistant",
+        content: assistantText,
+        timestamp: new Date().toISOString(),
+      }]),
       created_at: new Date().toISOString(),
     });
     if (assistantMsgError) throw assistantMsgError;
