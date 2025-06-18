@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { supabaseAdmin } from "../_shared/supabase.ts";
 
 const corsHeaders = {
@@ -7,25 +7,16 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // Authentication
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      throw new Error("Missing auth token");
-    }
-    const token = authHeader.split(" ")[1];
-    if (token !== Deno.env.get("SERVICE_AUTH_TOKEN")) {
-      throw new Error("Invalid token");
-    }
+    const body = await req.json();
+    const { action, projectId, title } = body;
 
-    const { action, projectId, title } = await req.json();
-
-    if (!action) {
+    if (!action || (action !== "create" && action !== "retrieve")) {
       throw new Error("Missing required action: 'create' or 'retrieve'");
     }
 
