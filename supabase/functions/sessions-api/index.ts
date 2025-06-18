@@ -7,6 +7,11 @@ const corsHeaders = {
 };
 
 Deno.serve(async (req) => {
+  // Handle CORS preflight request
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
     const body = await req.json();
     const { action, projectId, title } = body;
@@ -78,14 +83,19 @@ Deno.serve(async (req) => {
       {
         status: 500,
         headers: {
+          ...corsHeaders,
           "Content-Type": "application/json",
         },
       },
     );
   }
 
+  // Fallback for unsupported methods
   return new Response("Method Not Allowed", {
     status: 405,
-    headers: corsHeaders,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "text/plain",
+    },
   });
 });
