@@ -12,6 +12,13 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  if (req.method !== "POST") {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "text/plain" },
+    });
+  }
+
   try {
     const body = await req.json();
     const { action, projectId, title } = body;
@@ -20,6 +27,7 @@ Deno.serve(async (req) => {
       throw new Error("Missing required action: 'create' or 'retrieve'");
     }
 
+    let sessionsData;
     if (action === "retrieve") {
       const { data, error } = await supabaseAdmin
         .from("chat_sessions")
@@ -31,17 +39,7 @@ Deno.serve(async (req) => {
         console.error("Failed to retrieve sessions: ", error);
         throw new Error("Failed to retrieve sessions");
       }
-
-      return new Response(
-        JSON.stringify(data),
-        {
-          status: 200,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        },
-      );
+      sessionsData = data;
     }
 
     if (action === "create") {
@@ -59,17 +57,19 @@ Deno.serve(async (req) => {
         throw new Error("Failed to add new chat session");
       }
 
-      return new Response(
-        JSON.stringify(data),
-        {
-          status: 200,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        },
-      );
+      sessionsData = data;
     }
+
+    return new Response(
+      JSON.stringify(sessionsData),
+      {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      },
+    );
   } catch (error) {
     console.error("Error processing request: ", error);
     const errorMessage = error instanceof Error
@@ -89,13 +89,4 @@ Deno.serve(async (req) => {
       },
     );
   }
-
-  // Fallback for unsupported methods
-  return new Response("Method Not Allowed", {
-    status: 405,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "text/plain",
-    },
-  });
 });
