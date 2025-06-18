@@ -1,4 +1,4 @@
-import { OpenAIEmbeddingResponse, OpenAIMessage } from "./types.ts";
+import { OpenAIEmbeddingResponse, OpenAIMessage } from "../_shared/types.ts";
 
 const apiKey = Deno.env.get("OPENAI_API_KEY")!;
 

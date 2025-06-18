@@ -1,6 +1,10 @@
-import { supabaseAdmin } from "./supabase";
-import { openaiClient } from "./openai-client";
-import type { ChatMessage, KnowledgeBaseEntry, RAGContext } from "./types";
+import { supabaseAdmin } from "../_shared/supabase.ts";
+import { openaiClient } from "../_shared/openai-client.ts";
+import type {
+  ChatMessage,
+  KnowledgeBaseEntry,
+  RAGContext,
+} from "../_shared/types.ts";
 
 export async function generateEmbedding(text: string): Promise<number[]> {
   return await openaiClient.createEmbedding(text);
