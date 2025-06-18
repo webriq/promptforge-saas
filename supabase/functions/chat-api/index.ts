@@ -1,30 +1,19 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { supabaseAdmin } from "../_shared/supabase.ts";
 import { buildRAGContext } from "../_shared/rag-utils.ts";
 import { openaiClient } from "../_shared/openai-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // Authentication
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      throw new Error("Missing auth token");
-    }
-    const token = authHeader.split(" ")[1];
-    if (token !== Deno.env.get("SERVICE_AUTH_TOKEN")) {
-      throw new Error("Unauthorized request");
-    }
-
     if (req.method !== "POST") {
       return new Response("Method not allowed", {
         status: 405,

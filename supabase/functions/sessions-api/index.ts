@@ -3,15 +3,10 @@ import { supabaseAdmin } from "../_shared/supabase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
-
   try {
     const body = await req.json();
     const { action, projectId, title } = body;
@@ -36,7 +31,10 @@ Deno.serve(async (req) => {
         JSON.stringify(data),
         {
           status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
         },
       );
     }
@@ -60,7 +58,10 @@ Deno.serve(async (req) => {
         JSON.stringify(data),
         {
           status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
         },
       );
     }
@@ -77,7 +78,6 @@ Deno.serve(async (req) => {
       {
         status: 500,
         headers: {
-          ...corsHeaders,
           "Content-Type": "application/json",
         },
       },
