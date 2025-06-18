@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { action, projectId, title } = body;
+    const { action, sessionId, projectId, title } = body;
 
     if (!action || (action !== "create" && action !== "retrieve")) {
       throw new Error("Missing required action: 'create' or 'retrieve'");
@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
       const { data, error } = await supabaseAdmin
         .from("chat_sessions")
         .select("*")
-        .eq("project_id", projectId)
+        .eq("id", sessionId)
         .order("updated_at", { ascending: false });
 
       if (error) {
@@ -48,7 +48,8 @@ Deno.serve(async (req) => {
         .from("chat_sessions")
         .insert({
           title: title || "New Chat",
-          project_id: projectId,
+          session_id: sessionId,
+          projectId: projectId,
         })
         .select()
         .single();
