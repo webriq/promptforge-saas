@@ -23,10 +23,17 @@ serve(async (req) => {
       throw new Error("Invalid token");
     }
 
-    if (req.method === "GET") {
+    const { action, projectId, title } = await req.json();
+
+    if (!action) {
+      throw new Error("Missing required action: 'create' or 'retrieve'");
+    }
+
+    if (action === "retrieve") {
       const { data, error } = await supabaseAdmin
         .from("chat_sessions")
         .select("*")
+        .eq("project_id", projectId)
         .order("updated_at", { ascending: false });
 
       if (error) {
@@ -43,13 +50,12 @@ serve(async (req) => {
       );
     }
 
-    if (req.method === "POST") {
-      const { title } = await req.json();
-
+    if (action === "create") {
       const { data, error } = await supabaseAdmin
         .from("chat_sessions")
         .insert({
           title: title || "New Chat",
+          project_id: projectId,
         })
         .select()
         .single();
