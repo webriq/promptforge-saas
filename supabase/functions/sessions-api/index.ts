@@ -14,11 +14,28 @@ serve(async (req) => {
 
   try {
     const { action, projectId, title = "New Chat" } = await req.json();
-    if (!projectId) {
-      return new Response(JSON.stringify({ error: "Missing projectId" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!action || !projectId) {
+      return new Response(
+        JSON.stringify({
+          error: "Missing required parameters 'action' or 'projectId'",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (action !== "create" && action !== "retrieve") {
+      return new Response(
+        JSON.stringify({
+          error: "Invalid action. Should be 'create' or 'retrieve'",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     const supabaseClient = createClient(
@@ -29,28 +46,29 @@ serve(async (req) => {
     let data;
     if (action === "create") {
       // Create new session
-      const { data: newSession, error } = await supabaseClient
-        .from("chat_sessions")
-        .insert({ project_id: projectId, title })
-        .select()
-        .single();
+      const { data: newSession, error: createSessionError } =
+        await supabaseClient
+          .from("chat_sessions")
+          .insert({ project_id: projectId, title })
+          .select()
+          .single();
 
-      if (error) {
-        throw new Error("Failed to create session");
+      if (createSessionError) {
+        throw new Error("Failed to create session: ", createSessionError);
       }
 
       data = newSession;
     }
 
     if (action === "retrieve") {
-      const { data: chatSessions, error } = await supabaseClient
-        .from("chat_sessions")
-        .select("*")
-        .eq("project_id", projectId)
-        .single();
+      const { data: chatSessions, error: retrieveSessionsError } =
+        await supabaseClient
+          .from("chat_sessions")
+          .select("*")
+          .eq("project_id", projectId);
 
-      if (error) {
-        throw new Error("Failed to retrieve session");
+      if (retrieveSessionsError) {
+        throw new Error("Failed to retrieve sessions: ", retrieveSessionsError);
       }
 
       data = chatSessions;
