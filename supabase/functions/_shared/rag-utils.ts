@@ -38,7 +38,7 @@ export async function retrieveRelevantKnowledge(
 
   // Use a custom function for vector similarity search
   const { data, error } = await supabaseAdmin.rpc("search_knowledge_base", {
-    session_id: sessionId,
+    input_session_id: sessionId,
     query_embedding: queryEmbedding,
     similarity_threshold: 0.7,
     match_count: limit,
