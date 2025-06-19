@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    const { projectId, title = "New Chat" } = await req.json();
+    const { action, projectId, title = "New Chat" } = await req.json();
     if (!projectId) {
       return new Response(JSON.stringify({ error: "Missing projectId" }), {
         status: 400,
@@ -26,14 +26,35 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Create new session
-    const { data, error } = await supabaseClient
-      .from("chat_sessions")
-      .insert({ project_id: projectId, title })
-      .select()
-      .single();
+    let data;
+    if (action === "create") {
+      // Create new session
+      const { data: newSession, error } = await supabaseClient
+        .from("chat_sessions")
+        .insert({ project_id: projectId, title })
+        .select()
+        .single();
 
-    if (error) throw error;
+      if (error) {
+        throw new Error("Failed to create session");
+      }
+
+      data = newSession;
+    }
+
+    if (action === "retrieve") {
+      const { data: chatSessions, error } = await supabaseClient
+        .from("chat_sessions")
+        .select()
+        .eq("project_id", projectId)
+        .single();
+
+      if (error) {
+        throw new Error("Failed to retrieve session");
+      }
+
+      data = chatSessions;
+    }
 
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
