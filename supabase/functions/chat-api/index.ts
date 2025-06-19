@@ -27,10 +27,18 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // Get chat history
+    const { data: history } = await supabaseClient
+      .from("chat_sessions")
+      .select("id, threads")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false });
+
     // Save user message
     await supabaseClient
-      .from("chat_messages")
-      .insert({ session_id: sessionId, messages });
+      .from("chat_sessions")
+      .upsert({ threads: messages })
+      .eq("id", history.id);
 
     // Retrieve relevant knowledge
     const { data: knowledge } = await supabaseClient
@@ -39,13 +47,6 @@ serve(async (req) => {
       .eq("session_id", sessionId);
 
     const context = knowledge?.map((k) => k.content).join("\n\n") || "";
-
-    // Get chat history
-    const { data: history } = await supabaseClient
-      .from("chat_messages")
-      .select("messages")
-      .eq("session_id", sessionId)
-      .order("created_at", { ascending: true });
 
     // Generate AI response
     const openai = new OpenAI({ apiKey: Deno.env.get("OPENAI_API_KEY")! });
@@ -78,8 +79,9 @@ serve(async (req) => {
 
     // Save AI response
     await supabaseClient
-      .from("chat_messages")
-      .insert({ session_id: sessionId, messages: messagesWithAIResponse });
+      .from("chat_sessions")
+      .upsert({ threads: messagesWithAIResponse })
+      .eq("id", history.id);
 
     return new Response(JSON.stringify({ response: messagesWithAIResponse }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
