@@ -89,13 +89,12 @@ serve(async (req) => {
 
             RESPONSE STRUCTURE:
             - Briefly acknowledge the user's question (1-2 sentences max)
-            - If context is provided, always start response with: 'Here's an enhanced version of the content: '
+            - If context is provided, always start response with: 'Here's an enhanced version of the content: ' and end with 'What do you wish to do next?'
             - If user asks for a summary, provide a brief summary of the content
             - If user asks for enhancement or review on content, provide a summary and list of needed changes (if any)
             - If user asks to include external sources, provide a list of sources and their URLs at the end of the response
             - If user asks out-of-scope actions, politely decline specifying your role and suggest in-scope actions to generate AI-ready content
-            - Always end response with a question: 'What do you wish to do next?'
-            
+                        
             CRITICAL BEHAVIOR RULES:
             - Do not generate content that is offensive, inappropriate, spam or irrelevant to the context.
             - Use plain text formatting (no markdown)
