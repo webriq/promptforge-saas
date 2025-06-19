@@ -14,8 +14,8 @@ serve(async (req) => {
   }
 
   try {
-    const { sessionId, message } = await req.json();
-    if (!sessionId || !message) {
+    const { sessionId, messages } = await req.json();
+    if (!sessionId) {
       return new Response(JSON.stringify({ error: "Missing parameters" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -30,7 +30,7 @@ serve(async (req) => {
     // Save user message
     await supabaseClient
       .from("chat_messages")
-      .insert({ session_id: sessionId, role: "user", content: message });
+      .insert({ session_id: sessionId, messages });
 
     // Retrieve relevant knowledge
     const { data: knowledge } = await supabaseClient
@@ -43,34 +43,43 @@ serve(async (req) => {
     // Get chat history
     const { data: history } = await supabaseClient
       .from("chat_messages")
-      .select("role, content")
+      .select("messages")
       .eq("session_id", sessionId)
       .order("created_at", { ascending: true });
 
     // Generate AI response
     const openai = new OpenAI({ apiKey: Deno.env.get("OPENAI_API_KEY")! });
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-1106-preview",
+      model: "gpt-4.1-mini",
       messages: [
         {
           role: "system",
-          content: `You are a helpful assistant. Use this context: ${context}`,
+          content:
+            `You are a helpful AI assistant for our company. Your task is to generate AI-ready content based on the provided context and user's question.
+            If the context doesn't contain relevant information, say so politely and ask for more specific information or suggest uploading relevant documents.
+            Context:\n${context}
+          `,
         },
         ...(history || []).map((h) => ({ role: h.role, content: h.content })),
-        { role: "user", content: message },
+        ...messages,
       ],
+      temperature: 0.95,
     });
 
     const aiResponse = completion.choices[0].message.content;
 
+    const messagesWithAIResponse = [
+      ...history,
+      {
+        role: "assistant",
+        content: aiResponse,
+      },
+    ];
+
     // Save AI response
     await supabaseClient
       .from("chat_messages")
-      .insert({
-        session_id: sessionId,
-        role: "assistant",
-        content: aiResponse,
-      });
+      .insert({ session_id: sessionId, messages: messagesWithAIResponse });
 
     return new Response(JSON.stringify({ response: aiResponse }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
