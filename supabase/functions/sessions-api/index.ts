@@ -45,7 +45,7 @@ serve(async (req) => {
     if (action === "retrieve") {
       const { data: chatSessions, error } = await supabaseClient
         .from("chat_sessions")
-        .select()
+        .select("*")
         .eq("project_id", projectId)
         .single();
 
