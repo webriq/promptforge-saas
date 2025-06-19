@@ -1,11 +1,8 @@
 import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
-import { OpenAI } from "https://esm.sh/openai@4.0.0";
-
-interface ChatMessage {
-  role: "user" | "assistant" | "system";
-  content: string;
-}
+import { supabaseAdmin } from "../_shared/supabase.ts";
+import { openaiClient } from "../_shared/openai-client.ts";
+import { buildRAGContext } from "../_shared/rag-utils.ts";
+import type { OpenAIMessage } from "../_shared/types.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,7 +18,9 @@ serve(async (req) => {
   try {
     const { sessionId, messages } = await req.json();
     if (
-      !sessionId || !messages || !Array.isArray(messages) ||
+      !sessionId ||
+      !messages ||
+      !Array.isArray(messages) ||
       messages.length === 0
     ) {
       return new Response(
@@ -36,102 +35,84 @@ serve(async (req) => {
       );
     }
 
-    const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
+    const userMessage = messages[messages.length - 1];
 
-    // Get chat session
-    const { data: session, error: sessionError } = await supabaseClient
-      .from("chat_sessions")
-      .select("threads")
-      .eq("id", sessionId)
-      .maybeSingle();
+    // Store user message
+    const { error: insertError } = await supabaseAdmin
+      .from("chat_messages")
+      .insert({
+        session_id: sessionId,
+        role: userMessage.role,
+        content: userMessage.content,
+      });
 
-    if (sessionError) throw sessionError;
-
-    if (!session) {
-      return new Response(
-        JSON.stringify({ error: `Session with ID ${sessionId} not found.` }),
-        {
-          status: 404,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
+    if (insertError) {
+      throw new Error(`Failed to store user message: ${insertError.message}`);
     }
 
-    const history: ChatMessage[] = session.threads || [];
-    const fullThread: ChatMessage[] = [...history, ...messages];
+    const { relevantKnowledge, chatHistory } = await buildRAGContext(
+      sessionId,
+      userMessage.content,
+    );
+    const context = relevantKnowledge?.map((k) => k.content).join("\n\n") || "";
 
-    // Retrieve relevant knowledge
-    const { data: knowledge } = await supabaseClient
-      .from("knowledge_base")
-      .select("content")
-      .eq("session_id", sessionId);
+    const systemPrompt =
+      `You are a helpful AI assistant for our company dedicated to generating AI-ready content. If the context doesn't contain relevant information, say so politely and ask for more specific info or suggest uploading relevant documents.
+            
+      ROLE AND PURPOSE: Assist users in generating content guided by LLM-readiness best practices using the provided context and user's question.
+      
+      TONE: Professional, conversational, and helpful — never robotic or overly verbose.
 
-    const context = knowledge?.map((k: { content: string }) =>
-      k.content
-    ).join("\n\n") || "";
+      RESPONSE STRUCTURE:
+      - Briefly acknowledge the user's question (1-2 sentences max)
+      - If context is provided, always start response with: 'Here's an enhanced version of the content: ' and end with 'What do you wish to do next?'
+        - If there is no clear title, present the output in format:
+        {TITLE}
+        {CONTENT}
+      - If user asks for a summary, provide a brief summary of the content
+      - If user asks for enhancement or review on content, provide a summary and list of needed changes (if any)
+      - If user asks to include external sources, provide a list of sources and their URLs at the end of the response
+      - If user asks out-of-scope actions, politely decline specifying your role and suggest in-scope actions to generate AI-ready content
+      
+      CRITICAL BEHAVIOR RULES:
+      - Do not generate content that is offensive, inappropriate, spam or irrelevant to the context.
+      - Use plain text formatting (no markdown)
+      - Do not repeat the same content multiple times
+      - Do not ask out-of-scope questions
+      
+      Context:\n${context}
+    `;
+
+    const conversation: OpenAIMessage[] = [
+      { role: "system", content: systemPrompt },
+      ...chatHistory.map((m) => ({ role: m.role, content: m.content })),
+      { role: userMessage.role, content: userMessage.content },
+    ];
 
     // Generate AI response
-    const openai = new OpenAI({ apiKey: Deno.env.get("OPENAI_API_KEY")! });
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            `You are a helpful AI assistant for our company dedicated to generating AI-ready content. If the context doesn't contain relevant information, say so politely and ask for more specific info or suggest uploading relevant documents.
-            
-            ROLE AND PURPOSE: Assist users in generating content guided by LLM-readiness best practices using the provided context and user's question.
-            
-            TONE: Professional, conversational, and helpful — never robotic or overly verbose.
-
-            RESPONSE STRUCTURE:
-            - Briefly acknowledge the user's question (1-2 sentences max)
-            - If context is provided, always start response with: 'Here's an enhanced version of the content: ' and end with 'What do you wish to do next?'
-             - If there is no clear title, present the output in format:
-              {TITLE}
-              {CONTENT}
-            - If user asks for a summary, provide a brief summary of the content
-            - If user asks for enhancement or review on content, provide a summary and list of needed changes (if any)
-            - If user asks to include external sources, provide a list of sources and their URLs at the end of the response
-            - If user asks out-of-scope actions, politely decline specifying your role and suggest in-scope actions to generate AI-ready content
-            
-            CRITICAL BEHAVIOR RULES:
-            - Do not generate content that is offensive, inappropriate, spam or irrelevant to the context.
-            - Use plain text formatting (no markdown)
-            - Do not repeat the same content multiple times
-            - Do not ask out-of-scope questions
-            
-            Context:\n${context}
-          `,
-        },
-        ...fullThread,
-      ],
-      temperature: 0.95,
-    });
-
-    const aiResponseContent = completion.choices[0].message.content;
+    const response = await openaiClient.createChatCompletion(conversation);
+    const aiResponseData = await response.json();
+    const aiResponseContent = aiResponseData.choices[0].message.content;
 
     if (!aiResponseContent) {
       throw new Error("OpenAI returned an empty response.");
     }
 
-    const aiResponse: ChatMessage = {
+    // Store assistant message
+    await supabaseAdmin.from("chat_messages").insert({
+      session_id: sessionId,
       role: "assistant",
       content: aiResponseContent,
-    };
+    });
 
-    const finalThreads = [...fullThread, aiResponse];
+    // Return all messages for the session to update the UI
+    const { data: allMessages } = await supabaseAdmin
+      .from("chat_messages")
+      .select("role, content, created_at")
+      .eq("session_id", sessionId)
+      .order("created_at");
 
-    // Save user message and AI response together
-    await supabaseClient
-      .from("chat_sessions")
-      .update({ threads: finalThreads })
-      .eq("id", sessionId);
-
-    return new Response(JSON.stringify({ response: finalThreads }), {
+    return new Response(JSON.stringify({ response: allMessages }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {

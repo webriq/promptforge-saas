@@ -64,7 +64,7 @@ serve(async (req) => {
       const { data: chatSessions, error: retrieveSessionsError } =
         await supabaseClient
           .from("chat_sessions")
-          .select("*")
+          .select("id, project_id, title, created_at, updated_at")
           .eq("project_id", projectId)
           .order("created_at", { ascending: false });
 
