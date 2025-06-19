@@ -81,7 +81,7 @@ serve(async (req) => {
       .from("chat_messages")
       .insert({ session_id: sessionId, messages: messagesWithAIResponse });
 
-    return new Response(JSON.stringify({ response: aiResponse }), {
+    return new Response(JSON.stringify({ response: messagesWithAIResponse }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
