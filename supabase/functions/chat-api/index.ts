@@ -31,7 +31,7 @@ serve(async (req) => {
     const { data: history } = await supabaseClient
       .from("chat_sessions")
       .select("id, threads")
-      .eq("session_id", sessionId)
+      .eq("id", sessionId)
       .order("created_at", { ascending: false });
 
     // Save user message
@@ -44,7 +44,7 @@ serve(async (req) => {
     const { data: knowledge } = await supabaseClient
       .from("knowledge_base")
       .select("content")
-      .eq("session_id", sessionId);
+      .eq("id", sessionId);
 
     const context = knowledge?.map((k) => k.content).join("\n\n") || "";
 
