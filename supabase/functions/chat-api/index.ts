@@ -2,6 +2,11 @@ import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 import { OpenAI } from "https://esm.sh/openai@4.0.0";
 
+interface ChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type",
@@ -15,11 +20,20 @@ serve(async (req) => {
 
   try {
     const { sessionId, messages } = await req.json();
-    if (!sessionId) {
-      return new Response(JSON.stringify({ error: "Missing parameters" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (
+      !sessionId || !messages || !Array.isArray(messages) ||
+      messages.length === 0
+    ) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "Missing or invalid parameters: sessionId and messages are required.",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     const supabaseClient = createClient(
@@ -27,26 +41,37 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Get chat history
-    const { data: history } = await supabaseClient
+    // Get chat session
+    const { data: session, error: sessionError } = await supabaseClient
       .from("chat_sessions")
-      .select("id, threads")
+      .select("threads")
       .eq("id", sessionId)
-      .order("created_at", { ascending: false });
+      .maybeSingle();
 
-    // Save user message
-    await supabaseClient
-      .from("chat_sessions")
-      .upsert({ threads: messages })
-      .eq("id", history.id);
+    if (sessionError) throw sessionError;
+
+    if (!session) {
+      return new Response(
+        JSON.stringify({ error: `Session with ID ${sessionId} not found.` }),
+        {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    const history: ChatMessage[] = session.threads || [];
+    const fullThread: ChatMessage[] = [...history, ...messages];
 
     // Retrieve relevant knowledge
     const { data: knowledge } = await supabaseClient
       .from("knowledge_base")
       .select("content")
-      .eq("id", sessionId);
+      .eq("session_id", sessionId);
 
-    const context = knowledge?.map((k) => k.content).join("\n\n") || "";
+    const context = knowledge?.map((k: { content: string }) =>
+      k.content
+    ).join("\n\n") || "";
 
     // Generate AI response
     const openai = new OpenAI({ apiKey: Deno.env.get("OPENAI_API_KEY")! });
@@ -61,33 +86,38 @@ serve(async (req) => {
             Context:\n${context}
           `,
         },
-        ...(history || []).map((h) => ({ role: h.role, content: h.content })),
-        ...messages,
+        ...fullThread,
       ],
       temperature: 0.95,
     });
 
-    const aiResponse = completion.choices[0].message.content;
+    const aiResponseContent = completion.choices[0].message.content;
 
-    const messagesWithAIResponse = [
-      ...history,
-      {
-        role: "assistant",
-        content: aiResponse,
-      },
-    ];
+    if (!aiResponseContent) {
+      throw new Error("OpenAI returned an empty response.");
+    }
 
-    // Save AI response
+    const aiResponse: ChatMessage = {
+      role: "assistant",
+      content: aiResponseContent,
+    };
+
+    const finalThreads = [...fullThread, aiResponse];
+
+    // Save user message and AI response together
     await supabaseClient
       .from("chat_sessions")
-      .upsert({ threads: messagesWithAIResponse })
-      .eq("id", history.id);
+      .update({ threads: finalThreads })
+      .eq("id", sessionId);
 
-    return new Response(JSON.stringify({ response: messagesWithAIResponse }), {
+    return new Response(JSON.stringify({ response: finalThreads }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    const message = error instanceof Error
+      ? error.message
+      : "An unexpected error occurred.";
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: corsHeaders,
     });
