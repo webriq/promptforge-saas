@@ -1,5 +1,5 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { storeKnowledgeBase } from "../_shared/rag-utils.ts";
+import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,34 +7,33 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-Deno.serve(async (req) => {
+serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // Process request
-    const { sessionId, file } = await req.json();
-    if (!sessionId || !file) {
-      throw new Error("Missing required parameters");
-    }
+    const { sessionId, content, fileName, fileType } = await req.json();
 
-    // Assume file.content is plain text (already extracted on frontend or via a separate endpoint)
-    // Split into chunks (e.g., by paragraphs or every 1000 chars)
-    const chunkSize = 1000;
-    const text = file.content;
-    const chunks = [];
-    for (let i = 0; i < text.length; i += chunkSize) {
-      chunks.push(text.slice(i, i + chunkSize));
-    }
-
-    for (const chunk of chunks) {
-      await storeKnowledgeBase(sessionId, chunk, {
-        filename: file.name,
-        fileType: file.type,
-        uploadedAt: new Date().toISOString(),
+    if (!sessionId || !content) {
+      return new Response(JSON.stringify({ error: "Missing parameters" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const supabaseClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    // Save to knowledge base
+    await supabaseClient.from("knowledge_base").insert({
+      session_id: sessionId,
+      content,
+      file_name: fileName,
+      file_type: fileType,
+    });
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

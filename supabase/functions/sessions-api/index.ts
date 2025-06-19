@@ -1,5 +1,5 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { supabaseAdmin } from "../_shared/supabase.ts";
+import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,88 +7,41 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-Deno.serve(async (req) => {
-  // Handle CORS preflight request
+serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  if (req.method !== "POST") {
-    return new Response("Method Not Allowed", {
-      status: 405,
+  try {
+    const { projectId, title = "New Chat" } = await req.json();
+    if (!projectId) {
+      return new Response(JSON.stringify({ error: "Missing projectId" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    // Create new session
+    const { data, error } = await supabaseClient
+      .from("chat_sessions")
+      .insert({ project_id: projectId, title })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return new Response(JSON.stringify(data), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
       headers: corsHeaders,
     });
-  }
-
-  try {
-    const body = await req.json();
-    const { action, sessionId, projectId, title } = body;
-
-    if (!action || (action !== "create" && action !== "retrieve")) {
-      throw new Error("Missing required action: 'create' or 'retrieve'");
-    }
-
-    let sessionsData;
-    if (action === "retrieve") {
-      const { data, error } = await supabaseAdmin
-        .from("chat_sessions")
-        .select("*")
-        .eq("id", sessionId)
-        .order("updated_at", { ascending: false });
-
-      if (error) {
-        console.error("Failed to retrieve sessions: ", error);
-        throw new Error("Failed to retrieve sessions");
-      }
-      sessionsData = data;
-    }
-
-    if (action === "create") {
-      const { data, error } = await supabaseAdmin
-        .from("chat_sessions")
-        .insert({
-          title: title || "New Chat",
-          session_id: sessionId,
-          projectId: projectId,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Failed to add new chat session: ", error);
-        throw new Error("Failed to add new chat session");
-      }
-
-      sessionsData = data;
-    }
-
-    return new Response(
-      JSON.stringify(sessionsData),
-      {
-        status: 200,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-  } catch (error) {
-    console.error("Error processing request: ", error);
-    const errorMessage = error instanceof Error
-      ? error.message
-      : "Unknown error";
-    return new Response(
-      JSON.stringify({
-        error: "Internal server error",
-        message: errorMessage,
-      }),
-      {
-        status: 500,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-      },
-    );
   }
 });
