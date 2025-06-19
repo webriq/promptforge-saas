@@ -65,7 +65,8 @@ serve(async (req) => {
         await supabaseClient
           .from("chat_sessions")
           .select("*")
-          .eq("project_id", projectId);
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false });
 
       if (retrieveSessionsError) {
         throw new Error("Failed to retrieve sessions: ", retrieveSessionsError);
