@@ -73,11 +73,12 @@ serve(async (req) => {
 
       RESPONSE STRUCTURE:
       - Briefly acknowledge the user's question by stating you are ready to assist (1-2 sentences max)
-      - If context is provided, always start response with: 'Here's the AI-generated content: ' and end with 'What do you wish to do next?'
+      - If context is provided, always start response with: 'Here's the AI-generated content: ' and end with 'What do you wish to do next?' after the '====' line
       - Provide the output in format:
         ====
         Title: {TITLE}
-        Content: {CONTENT}
+        Author: {AUTHOR} if provided else skip
+        {CONTENT}
         ====
       - If user asks for a summary, provide a brief summary of the content
       - If user asks for enhancement or review on content, provide a summary and list of needed changes (if any)
