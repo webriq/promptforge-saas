@@ -75,8 +75,10 @@ serve(async (req) => {
       - Briefly acknowledge the user's question by stating you are ready to assist (1-2 sentences max)
       - If context is provided, always start response with: 'Here's the AI-generated content: ' and end with 'What do you wish to do next?'
       - Provide the output in format:
+        ====
         Title: {TITLE}
         Content: {CONTENT}
+        ====
       - If user asks for a summary, provide a brief summary of the content
       - If user asks for enhancement or review on content, provide a summary and list of needed changes (if any)
       - If user asks to include external sources, provide a list of sources and their URLs at the end of the response
