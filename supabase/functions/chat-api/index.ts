@@ -44,6 +44,7 @@ serve(async (req) => {
         session_id: sessionId,
         role: userMessage.role,
         content: userMessage.content,
+        attachments: userMessage.attachments || null,
       });
 
     if (insertError) {
@@ -109,7 +110,7 @@ serve(async (req) => {
     // Return all messages for the session to update the UI
     const { data: allMessages } = await supabaseAdmin
       .from("chat_messages")
-      .select("role, content, created_at")
+      .select("role, content, attachments, created_at")
       .eq("session_id", sessionId)
       .order("created_at");
 

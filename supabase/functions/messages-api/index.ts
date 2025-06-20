@@ -23,7 +23,7 @@ serve(async (req) => {
 
     const { data: messages, error } = await supabaseAdmin
       .from("chat_messages")
-      .select("role, content, created_at")
+      .select("role, content, attachments, created_at")
       .eq("session_id", sessionId)
       .order("created_at");
 
@@ -33,7 +33,10 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    const message = error instanceof Error
+      ? error.message
+      : "An unexpected error occurred.";
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: corsHeaders,
     });

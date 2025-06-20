@@ -12,6 +12,11 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   metadata?: Record<string, any>;
+  attachments?: {
+    fileName: string;
+    fileSize: number;
+    fileType: string;
+  }[];
   created_at: string;
 }
 
