@@ -37,6 +37,12 @@ serve(async (req) => {
 
     const userMessage = messages[messages.length - 1];
 
+    // Create a more specific search query by including file names
+    const fileNames = userMessage.attachments?.map((a: any) =>
+      a.fileName
+    ).join(" ") || "";
+    const searchQuery = userMessage.content + " " + fileNames;
+
     // Store user message
     const { error: insertError } = await supabaseAdmin
       .from("chat_messages")
@@ -53,7 +59,7 @@ serve(async (req) => {
 
     const { relevantKnowledge, chatHistory } = await buildRAGContext(
       sessionId,
-      userMessage.content,
+      searchQuery,
     );
     const context = relevantKnowledge?.map((k) => k.content).join("\n\n") || "";
 
