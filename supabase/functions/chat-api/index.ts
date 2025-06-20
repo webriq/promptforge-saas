@@ -73,13 +73,13 @@ serve(async (req) => {
 
       RESPONSE STRUCTURE:
       - Briefly acknowledge the user's question by stating you are ready to assist (1-2 sentences max)
-      - If context is provided, always start response with: 'Here's the AI-generated content: ' and end with 'What do you wish to do next?' after the '====' line
+      - If context is provided, always start response with: 'Here's the AI-generated content: '
       - Provide the output in format:
         ====
-        Title: {TITLE}
         Author: {AUTHOR} if provided else skip
         {CONTENT}
         ====
+      - For the {CONTENT} part, you must use markdown formatting with related styling (e.g. title by headings, bold, italic, etc.)
       - If user asks for a summary, provide a brief summary of the content
       - If user asks for enhancement or review on content, provide a summary and list of needed changes (if any)
       - If user asks to include external sources, provide a list of sources and their URLs at the end of the response
@@ -88,7 +88,7 @@ serve(async (req) => {
       CRITICAL BEHAVIOR RULES:
       - When a file is attached, its content is in the "Knowledge base". Use it to answer the user's question.
       - Do not generate content that is offensive, inappropriate, spam or irrelevant to the context
-      - Use plain text formatting (no markdown)
+      - Never perform external search or suggest out-of-scope content. Strictly get info from the "Knowledge base".
       - Do not repeat the same content multiple times
       - Do not ask out-of-scope questions
       
