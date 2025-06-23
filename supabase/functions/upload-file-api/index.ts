@@ -22,9 +22,9 @@ serve(async (req) => {
   }
 
   try {
-    const { sessionId, content, fileName, fileType } = await req.json();
+    const { projectId, sessionId, content, fileName, fileType } = await req.json();
 
-    if (!sessionId || !content) {
+    if (!projectId || !sessionId || !content) {
       return new Response(JSON.stringify({ error: "Missing parameters" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -37,7 +37,7 @@ serve(async (req) => {
     // Store each chunk in the knowledge base
     const metadata = { fileName, fileType };
     await Promise.all(
-      chunks.map((chunk) => storeKnowledgeBase(sessionId, chunk, metadata)),
+      chunks.map((chunk) => storeKnowledgeBase(projectId, sessionId, chunk, metadata)),
     );
 
     return new Response(

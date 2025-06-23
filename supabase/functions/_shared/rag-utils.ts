@@ -11,6 +11,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 export async function storeKnowledgeBase(
+  projectId: string,
   sessionId: string,
   content: string,
   metadata: Record<string, any> = {},
@@ -18,6 +19,7 @@ export async function storeKnowledgeBase(
   const embedding = await generateEmbedding(content);
 
   const { error } = await supabaseAdmin.from("knowledge_base").insert({
+    projectId,
     session_id: sessionId,
     content,
     metadata,
@@ -30,6 +32,7 @@ export async function storeKnowledgeBase(
 }
 
 export async function retrieveRelevantKnowledge(
+  projectId: string,
   sessionId: string,
   query: string,
   limit = 5,
@@ -37,7 +40,8 @@ export async function retrieveRelevantKnowledge(
   const queryEmbedding = await generateEmbedding(query);
 
   // Use a custom function for vector similarity search
-  const { data, error } = await supabaseAdmin.rpc("search_knowledge_base", {
+  const { data, error } = await supabaseAdmin.rpc("search_knowledge_base_updated", {
+    input_project_id: projectId, 
     input_session_id: sessionId,
     query_embedding: queryEmbedding,
     similarity_threshold: 0.7,
@@ -69,12 +73,13 @@ export async function getChatHistory(
 }
 
 export async function buildRAGContext(
+  projectId: string,
   sessionId: string,
   query: string,
 ): Promise<RAGContext> {
   const [chatHistory, relevantKnowledge] = await Promise.all([
     getChatHistory(sessionId),
-    retrieveRelevantKnowledge(sessionId, query),
+    retrieveRelevantKnowledge(projectId, sessionId, query),
   ]);
 
   return {

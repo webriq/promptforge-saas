@@ -16,8 +16,9 @@ serve(async (req) => {
   }
 
   try {
-    const { sessionId, messages } = await req.json();
+    const { projectId, sessionId, messages } = await req.json();
     if (
+      !projectId ||
       !sessionId ||
       !messages ||
       !Array.isArray(messages) ||
@@ -26,7 +27,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           error:
-            "Missing or invalid parameters: sessionId and messages are required.",
+            "Missing or invalid parameters: projectId, sessionId and messages are required.",
         }),
         {
           status: 400,
@@ -58,6 +59,7 @@ serve(async (req) => {
     }
 
     const { relevantKnowledge, chatHistory } = await buildRAGContext(
+      projectId,
       sessionId,
       searchQuery,
     );
@@ -72,19 +74,15 @@ serve(async (req) => {
       TONE: Professional, conversational, and helpful — never robotic or overly verbose.
 
       RESPONSE STRUCTURE:
-      - Briefly acknowledge the user's question by stating you are ready to assist (1-2 sentences max)
-      - If context is provided, always start response with: 'Here's the AI-generated content: '
-      - Provide the output in format:
-        ====
+      - If context was found, only return answers in the following format (no other text):
         Author: {AUTHOR} if provided else skip
         {CONTENT}
-        ====
       - For the {CONTENT} part, you must use markdown formatting with related styling (e.g. title by headings, bold, italic, etc.)
       - If user asks for a summary, provide a brief summary of the content
       - If user asks for enhancement or review on content, provide a summary and list of needed changes (if any)
       - If user asks to include external sources, provide a list of sources and their URLs at the end of the response
-      - If user asks out-of-scope actions, politely decline specifying your role and suggest in-scope actions to generate AI-ready content
-      
+      - If you don't know the answer, just say so politely and ask for more context or suggest uploading documents in-scope actions to generate AI-ready content
+
       CRITICAL BEHAVIOR RULES:
       - When a file is attached, its content is in the "Knowledge base". Use it to answer the user's question.
       - Do not generate content that is offensive, inappropriate, spam or irrelevant to the context
