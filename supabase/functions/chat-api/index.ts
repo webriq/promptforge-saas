@@ -74,9 +74,9 @@ serve(async (req) => {
       TONE: Professional, conversational, and helpful — never robotic or overly verbose.
 
       RESPONSE STRUCTURE:
-      - Briefly acknowledge the user's question by stating you are ready to assist (1-2 sentences max)Add commentMore actions
+      - Briefly acknowledge the user's question by stating you are ready to assist (1-2 sentences max)
       - If context is provided, always start response with: 'Here's the AI-generated content: '
-      - Provide the output in format:
+      - Provide the output in format (no other text):
         Author: {AUTHOR} if provided else skip
         {CONTENT}
       - For the {CONTENT} part, you must use markdown formatting with related styling (e.g. title by headings, bold, italic, etc.)
