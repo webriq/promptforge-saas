@@ -22,7 +22,8 @@ serve(async (req) => {
   }
 
   try {
-    const { projectId, sessionId, content, fileName, fileType } = await req.json();
+    const { projectId, sessionId, content, fileName, fileType } = await req
+      .json();
 
     if (!projectId || !sessionId || !content) {
       return new Response(JSON.stringify({ error: "Missing parameters" }), {
@@ -36,9 +37,18 @@ serve(async (req) => {
 
     // Store each chunk in the knowledge base
     const metadata = { fileName, fileType };
+
+    console.log("Storing chunks for project:", projectId);
+    console.log("Session:", sessionId);
+    console.log("Chunks to store:", chunks.length);
+
     await Promise.all(
-      chunks.map((chunk) => storeKnowledgeBase(projectId, sessionId, chunk, metadata)),
+      chunks.map((chunk) =>
+        storeKnowledgeBase(projectId, sessionId, chunk, metadata)
+      ),
     );
+
+    console.log("Successfully stored all chunks in knowledge base");
 
     return new Response(
       JSON.stringify({ success: true, chunks: chunks.length }),
@@ -47,7 +57,10 @@ serve(async (req) => {
       },
     );
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    const message = error instanceof Error
+      ? error.message
+      : "An unexpected error occurred.";
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: corsHeaders,
     });

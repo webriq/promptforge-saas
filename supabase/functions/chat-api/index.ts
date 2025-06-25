@@ -63,7 +63,14 @@ serve(async (req) => {
       sessionId,
       searchQuery,
     );
+
+    console.log("Search query:", searchQuery);
+    console.log("Project ID:", projectId);
+    console.log("Found knowledge entries:", relevantKnowledge?.length || 0);
+
     const context = relevantKnowledge?.map((k) => k.content).join("\n\n") || "";
+
+    console.log("Context length:", context.length);
 
     const systemPrompt =
       `You are a helpful AI assistant for our company dedicated to generating AI-ready content. Get information from the "Knowledge base" to answer questions.
@@ -101,8 +108,8 @@ serve(async (req) => {
       
       ${
         context.trim() === ""
-          ? "Note: No relevant knowledge base content found for this query. Please inform the user they need to provide more context or upload relevant documents."
-          : "Use the above knowledge base content to inform your response."
+          ? "IMPORTANT: No knowledge base content found for this project. This means no files have been uploaded yet, or the uploaded content doesn't match the query. You MUST inform the user that they need to upload relevant documents (PDF or text files) to get started. Do NOT generate generic content."
+          : "Use the above knowledge base content to inform your response. Generate content based on this specific information."
       }
     `;
 

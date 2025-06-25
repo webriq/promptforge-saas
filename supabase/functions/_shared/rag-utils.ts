@@ -19,7 +19,7 @@ export async function storeKnowledgeBase(
   const embedding = await generateEmbedding(content);
 
   const { error } = await supabaseAdmin.from("knowledge_base").insert({
-    projectId,
+    project_id: projectId,
     session_id: sessionId,
     content,
     metadata,
@@ -33,27 +33,51 @@ export async function storeKnowledgeBase(
 
 export async function retrieveRelevantKnowledge(
   projectId: string,
-  sessionId: string,
   query: string,
   limit = 5,
 ): Promise<KnowledgeBaseEntry[]> {
-  const queryEmbedding = await generateEmbedding(query);
+  try {
+    const queryEmbedding = await generateEmbedding(query);
 
-  // Use a custom function for vector similarity search
-  const { data, error } = await supabaseAdmin.rpc("search_knowledge_base_updated", {
-    input_project_id: projectId, 
-    input_session_id: sessionId,
-    query_embedding: queryEmbedding,
-    similarity_threshold: 0.7,
-    match_count: limit,
-  });
+    // First, try the custom function for vector similarity search
+    // Focus on project-wide knowledge base, not session-specific
+    const { data, error } = await supabaseAdmin.rpc(
+      "search_knowledge_base_updated",
+      {
+        input_project_id: projectId,
+        input_session_id: null, // Pass null to search across all sessions in the project
+        query_embedding: queryEmbedding,
+        similarity_threshold: 0.5, // Lower threshold for better matches
+        match_count: limit,
+      },
+    );
 
-  if (error) {
-    console.error("Error retrieving knowledge:", error);
+    if (error) {
+      console.error("Error with RPC function:", error);
+
+      // Fallback to direct query if RPC function fails
+      console.log("Falling back to direct query...");
+      const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+        .from("knowledge_base")
+        .select("*")
+        .eq("project_id", projectId)
+        .limit(limit);
+
+      if (fallbackError) {
+        console.error("Fallback query also failed:", fallbackError);
+        return [];
+      }
+
+      console.log("Fallback retrieved entries:", fallbackData?.length || 0);
+      return fallbackData || [];
+    }
+
+    console.log("RPC retrieved knowledge entries:", data?.length || 0);
+    return data || [];
+  } catch (error) {
+    console.error("Exception in retrieveRelevantKnowledge:", error);
     return [];
   }
-
-  return data || [];
 }
 
 export async function getChatHistory(
