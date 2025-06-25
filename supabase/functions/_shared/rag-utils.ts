@@ -111,3 +111,67 @@ export async function buildRAGContext(
     relevantKnowledge,
   };
 }
+
+export async function buildSessionSpecificRAGContext(
+  projectId: string,
+  sessionId: string,
+  query: string,
+): Promise<RAGContext> {
+  const [chatHistory, relevantKnowledge] = await Promise.all([
+    getChatHistory(sessionId),
+    retrieveSessionSpecificKnowledge(projectId, sessionId, query),
+  ]);
+
+  return {
+    chatHistory: chatHistory.slice(-10), // Last 10 messages for context
+    relevantKnowledge,
+  };
+}
+
+async function retrieveSessionSpecificKnowledge(
+  projectId: string,
+  sessionId: string,
+  query: string,
+  limit = 5,
+): Promise<KnowledgeBaseEntry[]> {
+  try {
+    const queryEmbedding = await generateEmbedding(query);
+
+    // Search for session-specific content first
+    const { data, error } = await supabaseAdmin.rpc(
+      "search_knowledge_base_updated",
+      {
+        input_project_id: projectId,
+        input_session_id: sessionId, // Search session-specific content
+        query_embedding: queryEmbedding,
+        similarity_threshold: 0.3, // Lower threshold for session-specific content
+        match_count: limit,
+      },
+    );
+
+    if (error) {
+      console.error("Error with session-specific RPC function:", error);
+
+      // Fallback to direct query for session-specific content
+      const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+        .from("knowledge_base")
+        .select("*")
+        .eq("project_id", projectId)
+        .eq("session_id", sessionId)
+        .limit(limit);
+
+      if (fallbackError) {
+        console.error("Session-specific fallback query failed:", fallbackError);
+        return [];
+      }
+
+      return fallbackData || [];
+    }
+
+    console.log("Session-specific knowledge entries:", data?.length || 0);
+    return data || [];
+  } catch (error) {
+    console.error("Exception in retrieveSessionSpecificKnowledge:", error);
+    return [];
+  }
+}

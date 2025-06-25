@@ -2,7 +2,8 @@ import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
 import { supabaseAdmin } from "../_shared/supabase.ts";
 import { openaiClient } from "../_shared/openai-client.ts";
 import { buildRAGContext } from "../_shared/rag-utils.ts";
-import type { OpenAIMessage } from "../_shared/types.ts";
+import { buildSessionSpecificRAGContext } from "../_shared/rag-utils.ts";
+import type { ChatMessage, OpenAIMessage } from "../_shared/types.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -58,11 +59,30 @@ serve(async (req) => {
       throw new Error(`Failed to store user message: ${insertError.message}`);
     }
 
-    const { relevantKnowledge, chatHistory } = await buildRAGContext(
-      projectId,
-      sessionId,
-      searchQuery,
-    );
+    // If user has attachments, prioritize session-specific content for immediate access
+    let relevantKnowledge;
+    let chatHistory;
+
+    if (userMessage.attachments && userMessage.attachments.length > 0) {
+      // For messages with attachments, search both project-wide and session-specific
+      const [projectContext, sessionContext] = await Promise.all([
+        buildRAGContext(projectId, sessionId, searchQuery),
+        buildSessionSpecificRAGContext(projectId, sessionId, searchQuery),
+      ]);
+
+      // Combine and prioritize session-specific content
+      relevantKnowledge = [
+        ...sessionContext.relevantKnowledge,
+        ...projectContext.relevantKnowledge,
+      ].slice(0, 8); // Take top 8 most relevant
+
+      chatHistory = projectContext.chatHistory;
+    } else {
+      // For regular messages without attachments, use standard search
+      const context = await buildRAGContext(projectId, sessionId, searchQuery);
+      relevantKnowledge = context.relevantKnowledge;
+      chatHistory = context.chatHistory;
+    }
 
     const context = relevantKnowledge?.map((k) => k.content).join("\n\n") || "";
 
@@ -98,10 +118,18 @@ serve(async (req) => {
       
       CRITICAL BEHAVIOR RULES:
       - ONLY generate content if you have relevant information from the Knowledge base
-      - When files are uploaded, their content appears in the Knowledge base
+      - When files are uploaded, their content appears in the Knowledge base immediately
+      - For file analysis requests, examine ALL available content from the Knowledge base
+      - Provide detailed analysis of uploaded documents when requested
       - Never generate generic content without specific context
       - Do not create fictional or placeholder information
-      - If unsure, ask for clarification rather than generating content
+      - If analyzing files, reference specific sections and provide concrete recommendations
+      
+      ${
+        userMessage.attachments && userMessage.attachments.length > 0
+          ? `IMPORTANT: The user has uploaded files in this conversation. You should find content from these files in the Knowledge base below. Use this content to provide detailed analysis and recommendations.`
+          : ""
+      }
       
       Knowledge base context:
       ${context}
@@ -109,13 +137,18 @@ serve(async (req) => {
       ${
         context.trim() === ""
           ? "IMPORTANT: No knowledge base content found for this project. This means no files have been uploaded yet, or the uploaded content doesn't match the query. You MUST inform the user that they need to upload relevant documents (PDF or text files) to get started. Do NOT generate generic content."
+          : userMessage.attachments && userMessage.attachments.length > 0
+          ? "The above knowledge base content includes information from recently uploaded files. Use this content to provide detailed analysis and generate improved content as requested."
           : "Use the above knowledge base content to inform your response. Generate content based on this specific information."
       }
     `;
 
     const conversation: OpenAIMessage[] = [
       { role: "system", content: systemPrompt },
-      ...chatHistory.map((m) => ({ role: m.role, content: m.content })),
+      ...chatHistory.map((m: ChatMessage) => ({
+        role: m.role,
+        content: m.content,
+      })),
       { role: userMessage.role, content: userMessage.content },
     ];
 
