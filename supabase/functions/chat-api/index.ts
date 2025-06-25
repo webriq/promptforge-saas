@@ -59,7 +59,6 @@ serve(async (req) => {
     }
 
     const { relevantKnowledge, chatHistory } = await buildRAGContext(
-      projectId,
       sessionId,
       searchQuery,
     );
@@ -74,17 +73,17 @@ serve(async (req) => {
       TONE: Professional, conversational, and helpful — never robotic or overly verbose.
 
       RESPONSE STRUCTURE:
-      - Briefly acknowledge the user's question by stating you are ready to assist (1-2 sentences max)
-      - If context is provided, always start response with: 'Here's the AI-generated content: '
-      - Provide the output in format (no other text):
-        Author: {AUTHOR} if provided else skip
-        {CONTENT}
-      - For the {CONTENT} part, you must use markdown formatting with related styling (e.g. title by headings, bold, italic, etc.)
-      - If user asks for a summary, provide a brief summary of the content
-      - If user asks for enhancement or review on content, provide a summary and list of needed changes (if any)
-      - If user asks to include external sources, provide a list of sources and their URLs at the end of the response
-      - If you don't know the answer, just say so politely and ask for more context or suggest uploading documents in-scope actions to generate AI-ready content
-
+      - Your response must contain the generated content for the user inside \`====\` delimiters.
+      - Any conversational text, like acknowledgements, should be outside and before the delimiters.
+      - If you are providing generated content from the knowledge base, your conversational text MUST include the phrase: "Here's the AI-generated content:"
+      
+      CONTENT FORMATTING (for the content inside the \`====\` delimiters):
+      - The content must be valid markdown.
+      - When generating a blog post or document, it must include a title formatted as a level-1 heading (e.g., # My Title).
+      - If the user provides an author, it must be on the line after the title, formatted as '*Author: [Author Name]*'.
+      - For summaries or reviews, also format them as markdown inside the delimiters.
+      - If you don't know the answer, just say so politely in the conversational part and leave the delimited part empty or omit it entirely.
+      
       CRITICAL BEHAVIOR RULES:
       - When a file is attached, its content is in the "Knowledge base". Use it to answer the user's question.
       - Do not generate content that is offensive, inappropriate, spam or irrelevant to the context
