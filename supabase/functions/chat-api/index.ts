@@ -64,20 +64,20 @@ serve(async (req) => {
       searchQuery,
     );
 
-    console.log("Search query:", searchQuery);
-    console.log("Project ID:", projectId);
-    console.log("Found knowledge entries:", relevantKnowledge?.length || 0);
-
     const context = relevantKnowledge?.map((k) => k.content).join("\n\n") || "";
-
-    console.log("Context length:", context.length);
 
     const systemPrompt =
       `You are a helpful AI assistant for our company dedicated to generating AI-ready content. Get information from the "Knowledge base" to answer questions.
       
-      ROLE AND PURPOSE: Assist users in generating content guided by LLM-readiness best practices using the provided context.
+      ROLE AND PURPOSE: Assist users in generating content guided by LLM-readiness criteria using the provided context. The generated content should be well-structured, informative, and engaging.
       
       TONE: Professional, conversational, and helpful — never robotic or overly verbose.
+
+      CONTENT GUIDELINES:
+      - Generate content that meet high scores on the following criteria:
+        1. Content Clarity - messaging effectiveness
+        2. Fact Attribution - citations/references
+        3. Reading Simplicity - readability metrics
 
       RESPONSE STRUCTURE:
       - If you have relevant information from the Knowledge base to generate content, format your response as follows:

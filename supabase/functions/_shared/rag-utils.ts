@@ -103,7 +103,7 @@ export async function buildRAGContext(
 ): Promise<RAGContext> {
   const [chatHistory, relevantKnowledge] = await Promise.all([
     getChatHistory(sessionId),
-    retrieveRelevantKnowledge(projectId, sessionId, query),
+    retrieveRelevantKnowledge(projectId, query),
   ]);
 
   return {
