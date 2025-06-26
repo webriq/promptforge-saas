@@ -1,8 +1,11 @@
 import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
 import { supabaseAdmin } from "../_shared/supabase.ts";
 import { openaiClient } from "../_shared/openai-client.ts";
-import { buildRAGContext } from "../_shared/rag-utils.ts";
-import { buildSessionSpecificRAGContext } from "../_shared/rag-utils.ts";
+import {
+  buildRAGContext,
+  buildSessionSpecificRAGContext,
+  storeContentVersion,
+} from "../_shared/rag-utils.ts";
 import type { ChatMessage, OpenAIMessage } from "../_shared/types.ts";
 
 const corsHeaders = {
@@ -162,11 +165,76 @@ serve(async (req) => {
     }
 
     // Store assistant message
-    await supabaseAdmin.from("chat_messages").insert({
-      session_id: sessionId,
-      role: "assistant",
-      content: aiResponseContent,
-    });
+    const { data: assistantMessage, error: assistantError } =
+      await supabaseAdmin
+        .from("chat_messages")
+        .insert({
+          session_id: sessionId,
+          role: "assistant",
+          content: aiResponseContent,
+        })
+        .select("id")
+        .single();
+
+    if (assistantError) {
+      throw new Error(
+        `Failed to store assistant message: ${assistantError.message}`,
+      );
+    }
+
+    // Check if the response contains generated content and create a version
+    const hasGeneratedContent = aiResponseContent.includes("====") ||
+      (aiResponseContent.includes("# ") && aiResponseContent.length > 200);
+
+    if (hasGeneratedContent) {
+      try {
+        // Parse the content to extract title and author
+        const parseContentForVersion = (content: string) => {
+          let title = "AI-Generated Content";
+          let author = "AI Assistant";
+          let cleanContent = content;
+
+          // Extract content within ==== delimiters if present
+          const delimiterMatch = content.split("====");
+          if (delimiterMatch.length > 1) {
+            cleanContent = delimiterMatch[1].trim();
+          }
+
+          // Extract title from markdown heading
+          const titleMatch = cleanContent.match(/^#\s+(.+)$/m);
+          if (titleMatch) {
+            title = titleMatch[1];
+          }
+
+          // Extract author
+          const authorMatch = cleanContent.match(/\*Author:\s*(.+)\*/);
+          if (authorMatch) {
+            author = authorMatch[1];
+          }
+
+          return { title, author, content: cleanContent };
+        };
+
+        const { title, author, content: versionContent } =
+          parseContentForVersion(aiResponseContent);
+
+        const versionData = await storeContentVersion(
+          sessionId,
+          projectId,
+          assistantMessage.id,
+          title,
+          author,
+          versionContent,
+        );
+
+        console.log(
+          `Created content version ${versionData.version_number} for session ${sessionId}`,
+        );
+      } catch (versionError) {
+        console.error("Failed to create content version:", versionError);
+        // Don't fail the whole request if version creation fails
+      }
+    }
 
     // Return all messages for the session to update the UI
     const { data: allMessages } = await supabaseAdmin
