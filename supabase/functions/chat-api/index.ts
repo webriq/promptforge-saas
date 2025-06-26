@@ -5,6 +5,7 @@ import {
   buildRAGContext,
   buildSessionSpecificRAGContext,
   storeContentVersion,
+  storeKnowledgeBase,
 } from "../_shared/rag-utils.ts";
 import type { ChatMessage, OpenAIMessage } from "../_shared/types.ts";
 
@@ -122,11 +123,14 @@ serve(async (req) => {
       CRITICAL BEHAVIOR RULES:
       - ONLY generate content if you have relevant information from the Knowledge base
       - When files are uploaded, their content appears in the Knowledge base immediately
+      - Previously generated content is also stored in the Knowledge base (marked as "generated_content" type)
+      - When asked to expand, modify, or build upon previous content, reference the existing generated content from the Knowledge base
       - For file analysis requests, examine ALL available content from the Knowledge base
       - Provide detailed analysis of uploaded documents when requested
       - Never generate generic content without specific context
       - Do not create fictional or placeholder information
       - If analyzing files, reference specific sections and provide concrete recommendations
+      - When expanding content, always build upon the existing generated content rather than starting from scratch
       
       ${
         userMessage.attachments && userMessage.attachments.length > 0
@@ -142,7 +146,7 @@ serve(async (req) => {
           ? "IMPORTANT: No knowledge base content found for this project. This means no files have been uploaded yet, or the uploaded content doesn't match the query. You MUST inform the user that they need to upload relevant documents (PDF or text files) to get started. Do NOT generate generic content."
           : userMessage.attachments && userMessage.attachments.length > 0
           ? "The above knowledge base content includes information from recently uploaded files. Use this content to provide detailed analysis and generate improved content as requested."
-          : "Use the above knowledge base content to inform your response. Generate content based on this specific information."
+          : "Use the above knowledge base content to inform your response. This includes both uploaded documents and any previously generated content (marked as 'generated_content' type). When expanding or modifying content, reference and build upon the existing generated content."
       }
     `;
 
@@ -230,6 +234,32 @@ serve(async (req) => {
         console.log(
           `Created content version ${versionData.version_number} for session ${sessionId}`,
         );
+
+        // Also store the generated content in the knowledge base for future reference
+        try {
+          await storeKnowledgeBase(
+            projectId,
+            sessionId,
+            versionContent,
+            {
+              type: "generated_content",
+              title: title,
+              author: author,
+              version_number: versionData.version_number,
+              message_id: assistantMessage.id,
+              generated_at: new Date().toISOString(),
+            },
+          );
+          console.log(
+            `Stored generated content in knowledge base for session ${sessionId}`,
+          );
+        } catch (knowledgeError) {
+          console.error(
+            "Failed to store generated content in knowledge base:",
+            knowledgeError,
+          );
+          // Don't fail the whole request if knowledge storage fails
+        }
       } catch (versionError) {
         console.error("Failed to create content version:", versionError);
         // Don't fail the whole request if version creation fails
