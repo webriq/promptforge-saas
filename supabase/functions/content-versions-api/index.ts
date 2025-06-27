@@ -3,11 +3,12 @@ import {
   getContentVersion,
   getContentVersions,
   getLatestContentVersion,
+  markContentVersionAsPublished,
 } from "../_shared/rag-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -75,10 +76,37 @@ serve(async (req) => {
         data = await getLatestContentVersion(sessionId);
         break;
 
+      case "mark_published":
+        if (!versionId) {
+          return new Response(
+            JSON.stringify({
+              error: "versionId is required for 'mark_published' action",
+            }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
+        data = await markContentVersionAsPublished(versionId);
+        if (!data.success) {
+          return new Response(
+            JSON.stringify({
+              error: "Failed to mark version as published",
+            }),
+            {
+              status: 500,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
+        break;
+
       default:
         return new Response(
           JSON.stringify({
-            error: "Invalid action. Valid actions: list, get, latest",
+            error:
+              "Invalid action. Valid actions: list, get, latest, mark_published",
           }),
           {
             status: 400,

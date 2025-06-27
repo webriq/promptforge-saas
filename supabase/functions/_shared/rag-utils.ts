@@ -68,6 +68,7 @@ export async function storeContentVersion(
         title,
         author,
         content,
+        published: false, // New versions are not published by default
       })
       .select("id, version_number")
       .single();
@@ -97,13 +98,15 @@ export async function getContentVersions(
     content: string;
     created_at: string;
     message_id: string;
+    published: boolean;
+    published_at: string | null;
   }>
 > {
   try {
     const { data, error } = await supabaseAdmin
       .from("content_versions")
       .select(
-        "id, version_number, title, author, content, created_at, message_id",
+        "id, version_number, title, author, content, created_at, message_id, published, published_at",
       )
       .eq("session_id", sessionId)
       .order("version_number", { ascending: false });
@@ -129,12 +132,16 @@ export async function getContentVersion(
     author: string;
     content: string;
     created_at: string;
+    published: boolean;
+    published_at: string | null;
   } | null
 > {
   try {
     const { data, error } = await supabaseAdmin
       .from("content_versions")
-      .select("id, version_number, title, author, content, created_at")
+      .select(
+        "id, version_number, title, author, content, created_at, published, published_at",
+      )
       .eq("id", versionId)
       .single();
 
@@ -159,12 +166,16 @@ export async function getLatestContentVersion(
     author: string;
     content: string;
     created_at: string;
+    published: boolean;
+    published_at: string | null;
   } | null
 > {
   try {
     const { data, error } = await supabaseAdmin
       .from("content_versions")
-      .select("id, version_number, title, author, content, created_at")
+      .select(
+        "id, version_number, title, author, content, created_at, published, published_at",
+      )
       .eq("session_id", sessionId)
       .order("version_number", { ascending: false })
       .limit(1)
@@ -179,6 +190,39 @@ export async function getLatestContentVersion(
   } catch (error) {
     console.error("Error getting latest content version:", error);
     return null;
+  }
+}
+
+// New function to mark a content version as published
+export async function markContentVersionAsPublished(
+  versionId: string,
+): Promise<{ success: boolean; published_at: string | null }> {
+  try {
+    const publishedAt = new Date().toISOString();
+
+    const { data, error } = await supabaseAdmin
+      .from("content_versions")
+      .update({
+        published: true,
+        published_at: publishedAt,
+      })
+      .eq("id", versionId)
+      .select("published_at")
+      .single();
+
+    if (error) {
+      throw new Error(
+        `Failed to mark content version as published: ${error.message}`,
+      );
+    }
+
+    console.log(
+      `Content version ${versionId} marked as published at ${publishedAt}`,
+    );
+    return { success: true, published_at: data.published_at };
+  } catch (error) {
+    console.error("Error marking content version as published:", error);
+    return { success: false, published_at: null };
   }
 }
 
