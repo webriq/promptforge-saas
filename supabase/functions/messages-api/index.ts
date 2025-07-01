@@ -23,7 +23,7 @@ serve(async (req) => {
 
     const { data: messages, error } = await supabaseAdmin
       .from("chat_messages")
-      .select("role, content, attachments, created_at")
+      .select("id, role, content, attachments, created_at")
       .eq("session_id", sessionId)
       .order("created_at");
 
