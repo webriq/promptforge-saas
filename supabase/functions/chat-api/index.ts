@@ -15,6 +15,38 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Helper function to detect schema-related queries
+const isSchemaQuery = (content: string): boolean => {
+  const schemaKeywords = [
+    "pages", "components", "global seo", "documents", "schemas", "structure",
+    "content types", "page types", "component types", "site structure",
+    "what pages", "what components", "list pages", "list components",
+    "show pages", "show components", "available pages", "available components",
+    "current pages", "current components", "existing pages", "existing components",
+    "page structure", "component structure", "site architecture"
+  ];
+  
+  const lowerContent = content.toLowerCase();
+  return schemaKeywords.some(keyword => lowerContent.includes(keyword));
+};
+
+// Helper function to get schema data from project_schemas table
+const getSchemaData = async (projectId: string) => {
+  const { data: schemas, error } = await supabaseAdmin
+    .from("project_schemas")
+    .select("sanity_pages, sanity_components, sanity_global_seo")
+    .eq("app_project_id", projectId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error("Error fetching schema data:", error);
+    return null;
+  }
+
+  return schemas && schemas.length > 0 ? schemas[0] : null;
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -49,6 +81,9 @@ serve(async (req) => {
     ).join(" ") || "";
     const searchQuery = userMessage.content + " " + fileNames;
 
+    // Check if this is a schema-related query
+    const isSchemaRelatedQuery = isSchemaQuery(userMessage.content);
+
     // Store user message
     const { error: insertError } = await supabaseAdmin
       .from("chat_messages")
@@ -66,6 +101,7 @@ serve(async (req) => {
     // If user has attachments, prioritize session-specific content for immediate access
     let relevantKnowledge;
     let chatHistory;
+    let schemaContext = "";
 
     if (userMessage.attachments && userMessage.attachments.length > 0) {
       // For messages with attachments, search both project-wide and session-specific
@@ -88,7 +124,39 @@ serve(async (req) => {
       chatHistory = context.chatHistory;
     }
 
+    // If this is a schema-related query, fetch and include schema data
+    if (isSchemaRelatedQuery) {
+      const schemaData = await getSchemaData(projectId);
+      if (schemaData) {
+        let schemaInfo = "\n\nPROJECT SCHEMA INFORMATION:\n";
+        
+        if (schemaData.sanity_pages && schemaData.sanity_pages.result) {
+          schemaInfo += `\nPAGES (${schemaData.sanity_pages.result.length} total):\n`;
+          schemaData.sanity_pages.result.forEach((page: any, index: number) => {
+            schemaInfo += `${index + 1}. ${page.title || page._type} (Type: ${page._type})\n`;
+          });
+        }
+        
+        if (schemaData.sanity_components && schemaData.sanity_components.result) {
+          schemaInfo += `\nCOMPONENTS (${schemaData.sanity_components.result.length} total):\n`;
+          schemaData.sanity_components.result.forEach((component: any, index: number) => {
+            schemaInfo += `${index + 1}. ${component.title || component._type} (Type: ${component._type})\n`;
+          });
+        }
+        
+        if (schemaData.sanity_global_seo && schemaData.sanity_global_seo.result) {
+          schemaInfo += `\nGLOBAL SEO SETTINGS (${schemaData.sanity_global_seo.result.length} total):\n`;
+          schemaData.sanity_global_seo.result.forEach((seo: any, index: number) => {
+            schemaInfo += `${index + 1}. ${seo.title || seo._type} (Type: ${seo._type})\n`;
+          });
+        }
+        
+        schemaContext = schemaInfo;
+      }
+    }
+
     const context = relevantKnowledge?.map((k) => k.content).join("\n\n") || "";
+    const fullContext = context + schemaContext;
 
     const systemPrompt =
       `You are a helpful AI assistant for our company dedicated to generating AI-ready content. Get information from the "Knowledge base" to answer questions.
@@ -131,6 +199,12 @@ serve(async (req) => {
       - Do not create fictional or placeholder information
       - If analyzing files, reference specific sections and provide concrete recommendations
       - When expanding content, always build upon the existing generated content rather than starting from scratch
+
+      SCHEMA QUERIES:
+      - When users ask about their pages, components, or site structure, use the PROJECT SCHEMA INFORMATION section below
+      - Provide detailed lists and explanations of available pages, components, and SEO settings
+      - Help users understand their current content structure and suggest improvements
+      - When analyzing schema data, provide insights about content organization and potential optimizations
       
       ${
         userMessage.attachments && userMessage.attachments.length > 0
@@ -138,14 +212,22 @@ serve(async (req) => {
           : ""
       }
       
+      ${
+        isSchemaRelatedQuery
+          ? `IMPORTANT: The user is asking about their project structure/schemas. Use the PROJECT SCHEMA INFORMATION section below to provide detailed information about their pages, components, and SEO settings.`
+          : ""
+      }
+      
       Knowledge base context:
-      ${context}
+      ${fullContext}
       
       ${
-        context.trim() === ""
+        fullContext.trim() === ""
           ? "IMPORTANT: No knowledge base content found for this project. This means no files have been uploaded yet, or the uploaded content doesn't match the query. You MUST inform the user that they need to upload relevant documents (PDF or text files) to get started. Do NOT generate generic content."
           : userMessage.attachments && userMessage.attachments.length > 0
           ? "The above knowledge base content includes information from recently uploaded files. Use this content to provide detailed analysis and generate improved content as requested."
+          : isSchemaRelatedQuery
+          ? "The above knowledge base content includes your project schema information. Use this to provide detailed information about your pages, components, and SEO settings."
           : "Use the above knowledge base content to inform your response. This includes both uploaded documents and any previously generated content (marked as 'generated_content' type). When expanding or modifying content, reference and build upon the existing generated content."
       }
     `;

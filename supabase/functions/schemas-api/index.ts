@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
+import { storeKnowledgeBase } from "../_shared/rag-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -58,8 +59,8 @@ serve(async (req) => {
       const { data: addSchemas, error: addSchemasError } = await supabaseClient
         .from("project_schemas")
         .insert({
-          sanity_project_id: projectId,
-          sanity_dataset: dataset,
+          sanity_project_id: parseInt(projectId) || null,
+          sanity_project_dataset: dataset,
           sanity_pages: pages,
           sanity_components: components,
           sanity_global_seo: globalSeo,
@@ -69,7 +70,75 @@ serve(async (req) => {
         .single();
 
       if (addSchemasError) {
-        throw new Error("Failed to add project schemas: ", addSchemasError);
+        throw new Error("Failed to add project schemas: " + addSchemasError.message);
+      }
+
+      // Store schema data in knowledge base for RAG context
+      try {
+        // Store pages data
+        if (pages && pages.result && pages.result.length > 0) {
+          const pagesContent = pages.result.map((page: any) => 
+            `Page: ${page.title || page._type}\nType: ${page._type}\nContent: ${JSON.stringify(page, null, 2)}`
+          ).join('\n\n');
+          
+          await storeKnowledgeBase(
+            appProjectId,
+            null, // No specific session for schema data
+            pagesContent,
+            {
+              type: "schema_pages",
+              sanity_project_id: projectId,
+              dataset: dataset,
+              count: pages.result.length,
+              synced_at: new Date().toISOString(),
+            }
+          );
+        }
+
+        // Store components data
+        if (components && components.result && components.result.length > 0) {
+          const componentsContent = components.result.map((component: any) => 
+            `Component: ${component.title || component._type}\nType: ${component._type}\nContent: ${JSON.stringify(component, null, 2)}`
+          ).join('\n\n');
+          
+          await storeKnowledgeBase(
+            appProjectId,
+            null, // No specific session for schema data
+            componentsContent,
+            {
+              type: "schema_components",
+              sanity_project_id: projectId,
+              dataset: dataset,
+              count: components.result.length,
+              synced_at: new Date().toISOString(),
+            }
+          );
+        }
+
+        // Store globalSeo data
+        if (globalSeo && globalSeo.result && globalSeo.result.length > 0) {
+          const globalSeoContent = globalSeo.result.map((seo: any) => 
+            `Global SEO: ${seo.title || seo._type}\nType: ${seo._type}\nContent: ${JSON.stringify(seo, null, 2)}`
+          ).join('\n\n');
+          
+          await storeKnowledgeBase(
+            appProjectId,
+            null, // No specific session for schema data
+            globalSeoContent,
+            {
+              type: "schema_global_seo",
+              sanity_project_id: projectId,
+              dataset: dataset,
+              count: globalSeo.result.length,
+              synced_at: new Date().toISOString(),
+            }
+          );
+        }
+
+        console.log(`Successfully stored schema data in knowledge base for project ${appProjectId}`);
+      } catch (knowledgeError) {
+        console.error("Failed to store schema data in knowledge base:", knowledgeError);
+        // Don't fail the whole request if knowledge storage fails
       }
 
       data = addSchemas;
@@ -87,8 +156,7 @@ serve(async (req) => {
 
       if (retrieveSchemasError) {
         throw new Error(
-          "Failed to retrieve project schemas: ",
-          retrieveSchemasError,
+          "Failed to retrieve project schemas: " + retrieveSchemasError.message,
         );
       }
 
