@@ -15,6 +15,76 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Function to generate a concise title for the chat session
+async function generateSessionTitle(
+  userMessage: string,
+  aiResponse: string,
+): Promise<string> {
+  try {
+    const titlePrompt =
+      `Based on the following conversation, create a concise, descriptive title (max 6 words) that captures the main topic or purpose of the chat:
+
+User: ${userMessage.substring(0, 200)}...
+AI: ${aiResponse.substring(0, 200)}...
+
+Requirements:
+- Maximum 6 words
+- Descriptive and clear
+- No quotes or special characters
+- Capitalize appropriately
+
+Title:`;
+
+    const response = await openaiClient.createChatCompletion([
+      {
+        role: "system",
+        content:
+          "You are a helpful assistant that creates concise chat titles. Always respond with just the title, nothing else.",
+      },
+      { role: "user", content: titlePrompt },
+    ]);
+
+    const titleData = await response.json();
+    const generatedTitle = titleData.choices[0].message.content?.trim();
+
+    if (generatedTitle && generatedTitle.length > 0) {
+      // Clean up the title and ensure it's not too long
+      const cleanTitle = generatedTitle.replace(/['"]/g, "").trim();
+      return cleanTitle.length > 50
+        ? cleanTitle.substring(0, 50) + "..."
+        : cleanTitle;
+    }
+
+    return "New Chat";
+  } catch (error) {
+    console.error("Failed to generate session title:", error);
+    return "New Chat";
+  }
+}
+
+// Function to update session title
+async function updateSessionTitle(
+  sessionId: string,
+  projectId: string,
+  title: string,
+): Promise<void> {
+  try {
+    const { error } = await supabaseAdmin
+      .from("chat_sessions")
+      .update({ title })
+      .eq("id", sessionId)
+      .eq("project_id", projectId);
+
+    if (error) {
+      console.error("Failed to update session title:", error);
+    } else {
+      console.log(`Updated session ${sessionId} title to: ${title}`);
+    }
+  } catch (error) {
+    console.error("Error updating session title:", error);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -62,6 +132,14 @@ serve(async (req) => {
     if (insertError) {
       throw new Error(`Failed to store user message: ${insertError.message}`);
     }
+
+    // Check if this is the first message in the session (for title generation)
+    const { data: messageCount } = await supabaseAdmin
+      .from("chat_messages")
+      .select("id", { count: "exact" })
+      .eq("session_id", sessionId);
+
+    const isFirstMessage = messageCount && messageCount.length <= 1;
 
     // If user has attachments, prioritize session-specific content for immediate access
     let relevantKnowledge;
@@ -184,6 +262,20 @@ serve(async (req) => {
       throw new Error(
         `Failed to store assistant message: ${assistantError.message}`,
       );
+    }
+
+    // Generate and update session title if this is the first message
+    if (isFirstMessage) {
+      try {
+        const sessionTitle = await generateSessionTitle(
+          userMessage.content,
+          aiResponseContent,
+        );
+        await updateSessionTitle(sessionId, projectId, sessionTitle);
+      } catch (titleError) {
+        console.error("Failed to generate/update session title:", titleError);
+        // Don't fail the whole request if title generation fails
+      }
     }
 
     // Check if the response contains generated content and create a version

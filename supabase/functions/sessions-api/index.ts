@@ -13,7 +13,8 @@ serve(async (req) => {
   }
 
   try {
-    const { action, projectId, title = "New Chat" } = await req.json();
+    const { action, projectId, sessionId, title = "New Chat" } = await req
+      .json();
     if (!action || !projectId) {
       return new Response(
         JSON.stringify({
@@ -26,10 +27,10 @@ serve(async (req) => {
       );
     }
 
-    if (action !== "create" && action !== "retrieve") {
+    if (action !== "create" && action !== "retrieve" && action !== "update") {
       return new Response(
         JSON.stringify({
-          error: "Invalid action. Should be 'create' or 'retrieve'",
+          error: "Invalid action. Should be 'create', 'retrieve', or 'update'",
         }),
         {
           status: 400,
@@ -60,6 +61,36 @@ serve(async (req) => {
       data = newSession;
     }
 
+    if (action === "update") {
+      // Update existing session
+      if (!sessionId) {
+        return new Response(
+          JSON.stringify({
+            error: "sessionId is required for 'update' action",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      const { data: updatedSession, error: updateSessionError } =
+        await supabaseClient
+          .from("chat_sessions")
+          .update({ title })
+          .eq("id", sessionId)
+          .eq("project_id", projectId) // Ensure we only update sessions for this project
+          .select()
+          .single();
+
+      if (updateSessionError) {
+        throw new Error("Failed to update session: ", updateSessionError);
+      }
+
+      data = updatedSession;
+    }
+
     if (action === "retrieve") {
       const { data: chatSessions, error: retrieveSessionsError } =
         await supabaseClient
@@ -79,7 +110,10 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    const message = error instanceof Error
+      ? error.message
+      : "An unexpected error occurred.";
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: corsHeaders,
     });
