@@ -1,19 +1,10 @@
 import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
-import { storeKnowledgeBase } from "../_shared/rag-utils.ts";
+import { chunkContent, storeKnowledgeBase } from "../_shared/rag-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-// Simple sentence-based chunking
-const chunkContent = (text: string): string[] => {
-  return text
-    .replace(/([.?!])\s*(?=[A-Z])/g, "$1|")
-    .split("|")
-    .map((chunk) => chunk.trim())
-    .filter((chunk) => chunk.length > 10); // Only keep chunks with more than 10 chars
 };
 
 serve(async (req) => {
@@ -25,26 +16,27 @@ serve(async (req) => {
     const { projectId, sessionId, content, fileName, fileType } = await req
       .json();
 
-    if (!projectId || !sessionId || !content) {
+    if (!projectId || !sessionId || !content || !fileName) {
       return new Response(JSON.stringify({ error: "Missing parameters" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Chunk the content
+    // Chunk the content for better embedding storage
     const chunks = chunkContent(content);
 
-    // Store each chunk in the knowledge base
+    // Store each chunk in the knowledge base with fileName as source
     const metadata = { fileName, fileType };
 
     console.log("Storing chunks for project:", projectId);
     console.log("Session:", sessionId);
     console.log("Chunks to store:", chunks.length);
+    console.log("Source file:", fileName);
 
     await Promise.all(
       chunks.map((chunk) =>
-        storeKnowledgeBase(projectId, sessionId, chunk, metadata)
+        storeKnowledgeBase(projectId, sessionId, chunk, fileName, metadata)
       ),
     );
 

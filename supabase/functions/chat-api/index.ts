@@ -333,6 +333,7 @@ serve(async (req) => {
             projectId,
             sessionId,
             versionContent,
+            "generated_content",
             {
               type: "generated_content",
               title: title,

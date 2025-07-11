@@ -14,6 +14,7 @@ export async function storeKnowledgeBase(
   projectId: string,
   sessionId: string,
   content: string,
+  source: string,
   metadata: Record<string, any> = {},
 ): Promise<void> {
   const embedding = await generateEmbedding(content);
@@ -22,6 +23,7 @@ export async function storeKnowledgeBase(
     project_id: projectId,
     session_id: sessionId,
     content,
+    source,
     metadata,
     embedding,
   });
@@ -29,6 +31,87 @@ export async function storeKnowledgeBase(
   if (error) {
     throw new Error(`Failed to store knowledge: ${error.message}`);
   }
+}
+
+// New function for bulk content storage with source tracking
+export async function storeBulkKnowledgeBase(
+  projectId: string,
+  sessionId: string,
+  contentItems: Array<{
+    content: string;
+    source: string;
+    metadata?: Record<string, any>;
+  }>,
+): Promise<void> {
+  console.log(`Storing ${contentItems.length} items to knowledge base`);
+
+  // Process embeddings for all content items
+  const embeddings = await Promise.all(
+    contentItems.map((item) => generateEmbedding(item.content)),
+  );
+
+  // Prepare data for bulk insert
+  const dataToInsert = contentItems.map((item, index) => ({
+    project_id: projectId,
+    session_id: sessionId,
+    content: item.content,
+    source: item.source,
+    metadata: item.metadata || {},
+    embedding: embeddings[index],
+  }));
+
+  const { error } = await supabaseAdmin.from("knowledge_base").insert(
+    dataToInsert,
+  );
+
+  if (error) {
+    throw new Error(`Failed to store bulk knowledge: ${error.message}`);
+  }
+
+  console.log(
+    `Successfully stored ${contentItems.length} items to knowledge base`,
+  );
+}
+
+// Helper function to chunk content for better embedding storage
+export function chunkContent(
+  text: string,
+  maxChunkSize: number = 1000,
+  overlapSize: number = 100,
+): string[] {
+  if (text.length <= maxChunkSize) {
+    return [text];
+  }
+
+  const chunks: string[] = [];
+  let startIndex = 0;
+
+  while (startIndex < text.length) {
+    const endIndex = Math.min(startIndex + maxChunkSize, text.length);
+    const chunk = text.slice(startIndex, endIndex);
+
+    // Try to break at sentence boundaries
+    if (endIndex < text.length) {
+      const lastSentenceEnd = Math.max(
+        chunk.lastIndexOf("."),
+        chunk.lastIndexOf("!"),
+        chunk.lastIndexOf("?"),
+      );
+
+      if (lastSentenceEnd > maxChunkSize * 0.7) {
+        chunks.push(chunk.slice(0, lastSentenceEnd + 1).trim());
+        startIndex = startIndex + lastSentenceEnd + 1;
+      } else {
+        chunks.push(chunk.trim());
+        startIndex = endIndex - overlapSize;
+      }
+    } else {
+      chunks.push(chunk.trim());
+      break;
+    }
+  }
+
+  return chunks.filter((chunk) => chunk.length > 0);
 }
 
 // Content version management functions
