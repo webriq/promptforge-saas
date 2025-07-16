@@ -1,9 +1,13 @@
 import { supabaseAdmin } from "../_shared/supabase.ts";
 import { openaiClient } from "../_shared/openai-client.ts";
 import type {
+  AuthorSchema,
+  BlogSchema,
+  CategorySchema,
   ChatMessage,
   KnowledgeBaseEntry,
   RAGContext,
+  SchemaSearchResult,
 } from "../_shared/types.ts";
 
 export async function generateEmbedding(text: string): Promise<number[]> {
@@ -379,14 +383,16 @@ export async function buildRAGContext(
   sessionId: string,
   query: string,
 ): Promise<RAGContext> {
-  const [chatHistory, relevantKnowledge] = await Promise.all([
+  const [chatHistory, relevantKnowledge, schemaData] = await Promise.all([
     getChatHistory(sessionId),
     retrieveRelevantKnowledge(projectId, query),
+    searchSchemaContent(query, 5),
   ]);
 
   return {
     chatHistory: chatHistory.slice(-10), // Last 10 messages for context
     relevantKnowledge,
+    schemaData,
   };
 }
 
@@ -395,14 +401,16 @@ export async function buildSessionSpecificRAGContext(
   sessionId: string,
   query: string,
 ): Promise<RAGContext> {
-  const [chatHistory, relevantKnowledge] = await Promise.all([
+  const [chatHistory, relevantKnowledge, schemaData] = await Promise.all([
     getChatHistory(sessionId),
     retrieveSessionSpecificKnowledge(projectId, sessionId, query),
+    searchSchemaContent(query, 5),
   ]);
 
   return {
     chatHistory: chatHistory.slice(-10), // Last 10 messages for context
     relevantKnowledge,
+    schemaData,
   };
 }
 
@@ -452,4 +460,322 @@ async function retrieveSessionSpecificKnowledge(
     console.error("Exception in retrieveSessionSpecificKnowledge:", error);
     return [];
   }
+}
+
+// Schema management functions - Updated to match actual DB structure
+export async function createOrUpdateAuthor(
+  authorData: {
+    name: string;
+    slug: string;
+    bio?: string;
+    thumbnail_img?: string;
+    referenced_by?: Record<string, any>;
+  },
+): Promise<AuthorSchema> {
+  const { data, error } = await supabaseAdmin
+    .from("author_schema")
+    .upsert(authorData)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create/update author: ${error.message}`);
+  }
+
+  return data;
+}
+
+export async function createOrUpdateCategory(
+  categoryData: {
+    title: string;
+    description?: string;
+    referenced_by?: Record<string, any>;
+  },
+): Promise<CategorySchema> {
+  const { data, error } = await supabaseAdmin
+    .from("category_schema")
+    .upsert(categoryData)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create/update category: ${error.message}`);
+  }
+
+  return data;
+}
+
+export async function createOrUpdateBlog(
+  blogData: {
+    title: string;
+    slug: string;
+    content: string;
+    excerpt?: string;
+    authors?: Record<string, any>;
+    categories?: Record<string, any>;
+    thumbnail_img?: Record<string, any>;
+    seo_fields?: Record<string, any>;
+  },
+  overwrite = false,
+): Promise<BlogSchema> {
+  // Check if blog already exists
+  const { data: existingBlog } = await supabaseAdmin
+    .from("blog_schema")
+    .select("id")
+    .eq("slug", blogData.slug)
+    .single();
+
+  if (existingBlog && !overwrite) {
+    throw new Error(
+      `Blog with slug '${blogData.slug}' already exists. Set overwrite=true to update.`,
+    );
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("blog_schema")
+    .upsert(blogData)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create/update blog: ${error.message}`);
+  }
+
+  return data;
+}
+
+export async function getAuthors(): Promise<AuthorSchema[]> {
+  const { data, error } = await supabaseAdmin
+    .from("author_schema")
+    .select("*")
+    .order("name");
+
+  if (error) {
+    throw new Error(`Failed to get authors: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+export async function getCategories(): Promise<CategorySchema[]> {
+  const { data, error } = await supabaseAdmin
+    .from("category_schema")
+    .select("*")
+    .order("title");
+
+  if (error) {
+    throw new Error(`Failed to get categories: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+export async function getBlogs(): Promise<BlogSchema[]> {
+  const { data, error } = await supabaseAdmin
+    .from("blog_schema")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to get blogs: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+export async function getBlogBySlug(slug: string): Promise<BlogSchema | null> {
+  const { data, error } = await supabaseAdmin
+    .from("blog_schema")
+    .select("*")
+    .eq("slug", slug)
+    .single();
+
+  if (error) {
+    return null;
+  }
+
+  return data;
+}
+
+export async function getBlogWithAuthorsAndCategories(
+  slug: string,
+): Promise<
+  {
+    blog: BlogSchema;
+    authors: AuthorSchema[];
+    categories: CategorySchema[];
+  } | null
+> {
+  const blog = await getBlogBySlug(slug);
+  if (!blog) return null;
+
+  // Extract author and category data from the jsonb fields
+  const authorSlugs = blog.authors ? Object.keys(blog.authors) : [];
+  const categoryTitles = blog.categories ? Object.keys(blog.categories) : [];
+
+  const [authors, categories] = await Promise.all([
+    getAuthorsBySlugs(authorSlugs),
+    getCategoriesByTitles(categoryTitles),
+  ]);
+
+  return {
+    blog,
+    authors,
+    categories,
+  };
+}
+
+export async function getAuthorsBySlugs(
+  slugs: string[],
+): Promise<AuthorSchema[]> {
+  if (slugs.length === 0) return [];
+
+  const { data, error } = await supabaseAdmin
+    .from("author_schema")
+    .select("*")
+    .in("slug", slugs);
+
+  if (error) {
+    throw new Error(`Failed to get authors by slugs: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+export async function getCategoriesByTitles(
+  titles: string[],
+): Promise<CategorySchema[]> {
+  if (titles.length === 0) return [];
+
+  const { data, error } = await supabaseAdmin
+    .from("category_schema")
+    .select("*")
+    .in("title", titles);
+
+  if (error) {
+    throw new Error(`Failed to get categories by titles: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+export async function searchSchemaContent(
+  query: string,
+  limit = 10,
+): Promise<SchemaSearchResult[]> {
+  try {
+    // Search across all schema tables
+    const [blogResults, authorResults, categoryResults] = await Promise.all([
+      supabaseAdmin
+        .from("blog_schema")
+        .select("id, title, content, slug, created_at")
+        .or(`title.ilike.%${query}%,content.ilike.%${query}%`)
+        .limit(limit),
+      supabaseAdmin
+        .from("author_schema")
+        .select("id, name, bio, slug, created_at")
+        .or(`name.ilike.%${query}%,bio.ilike.%${query}%`)
+        .limit(limit),
+      supabaseAdmin
+        .from("category_schema")
+        .select("id, title, description, created_at")
+        .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
+        .limit(limit),
+    ]);
+
+    const results: SchemaSearchResult[] = [];
+
+    // Process blog results
+    if (blogResults.data) {
+      results.push(
+        ...blogResults.data.map((item) => ({
+          table_name: "blog_schema",
+          id: item.id,
+          title: item.title,
+          content: item.content || "",
+          slug: item.slug,
+          created_at: item.created_at,
+        })),
+      );
+    }
+
+    // Process author results
+    if (authorResults.data) {
+      results.push(
+        ...authorResults.data.map((item) => ({
+          table_name: "author_schema",
+          id: item.id,
+          title: item.name,
+          content: item.bio || "",
+          slug: item.slug,
+          created_at: item.created_at,
+        })),
+      );
+    }
+
+    // Process category results
+    if (categoryResults.data) {
+      results.push(
+        ...categoryResults.data.map((item) => ({
+          table_name: "category_schema",
+          id: item.id,
+          title: item.title,
+          content: item.description || "",
+          slug: item.title.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+          created_at: item.created_at,
+        })),
+      );
+    }
+
+    return results.slice(0, limit);
+  } catch (error) {
+    console.error("Exception in searchSchemaContent:", error);
+    return [];
+  }
+}
+
+// Helper function to generate slug from title
+export function generateSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+// Helper function to parse author and category names and create/get them
+export async function parseAndCreateAuthorsCategories(
+  authorNames: string[],
+  categoryNames: string[],
+): Promise<{
+  authors: AuthorSchema[];
+  categories: CategorySchema[];
+}> {
+  const authors: AuthorSchema[] = [];
+  const categories: CategorySchema[] = [];
+
+  // Process authors
+  for (const authorName of authorNames) {
+    if (authorName.trim()) {
+      const slug = generateSlug(authorName);
+      const author = await createOrUpdateAuthor({
+        name: authorName.trim(),
+        slug,
+        bio: `Author profile for ${authorName}`,
+      });
+      authors.push(author);
+    }
+  }
+
+  // Process categories
+  for (const categoryName of categoryNames) {
+    if (categoryName.trim()) {
+      const category = await createOrUpdateCategory({
+        title: categoryName.trim(),
+        description: `Category for ${categoryName}`,
+      });
+      categories.push(category);
+    }
+  }
+
+  return { authors, categories };
 }

@@ -32,6 +32,7 @@ export interface KnowledgeBaseEntry {
 export interface RAGContext {
   chatHistory: ChatMessage[];
   relevantKnowledge: KnowledgeBaseEntry[];
+  schemaData?: SchemaSearchResult[];
 }
 
 export interface OpenAIMessage {
@@ -70,5 +71,78 @@ export interface OpenAIEmbeddingResponse {
   usage: {
     prompt_tokens: number;
     total_tokens: number;
+  };
+}
+
+// New schema table interfaces - Updated to match actual DB structure
+export interface AuthorSchema {
+  id: string;
+  name: string;
+  slug: string;
+  bio?: string;
+  thumbnail_img?: string;
+  referenced_by?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CategorySchema {
+  id: string;
+  title: string;
+  description?: string;
+  referenced_by?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BlogSchema {
+  id: string;
+  title: string;
+  slug: string;
+  content: string;
+  excerpt?: string;
+  authors?: Record<string, any>; // jsonb field
+  categories?: Record<string, any>; // jsonb field
+  thumbnail_img?: Record<string, any>; // jsonb field
+  seo_fields?: Record<string, any>; // jsonb field
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SchemaSearchResult {
+  table_name: string;
+  id: string;
+  title: string;
+  content: string;
+  slug: string;
+  created_at: string;
+}
+
+export interface BlogPublishRequest {
+  content: string;
+  title: string;
+  author: string;
+  categories?: string[];
+  versionId: string;
+  projectId: string;
+  slug?: string;
+  excerpt?: string;
+  thumbnail?: {
+    url: string;
+    alt: string;
+  };
+  overwrite?: boolean;
+}
+
+export interface WebScrapingResult {
+  url: string;
+  title: string;
+  content: string;
+  success: boolean;
+  error?: string;
+  schemaData?: {
+    blog?: BlogSchema;
+    authors?: AuthorSchema[];
+    categories?: CategorySchema[];
   };
 }

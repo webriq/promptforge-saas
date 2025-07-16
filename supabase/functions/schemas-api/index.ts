@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
+import { supabaseAdmin } from "../_shared/supabase.ts";
+import { getAuthors, getBlogs, getCategories } from "../_shared/rag-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,12 +22,13 @@ serve(async (req) => {
       pages,
       globalSeo,
       appProjectId,
+      status,
     } = await req.json();
-    if (!action || !projectId || !appProjectId) {
+
+    if (!action) {
       return new Response(
         JSON.stringify({
-          error:
-            "Missing required parameters 'action', 'projectId' or 'appProjectId'",
+          error: "Missing required parameter 'action'",
         }),
         {
           status: 400,
@@ -35,25 +37,30 @@ serve(async (req) => {
       );
     }
 
-    if (action !== "add" && action !== "retrieve") {
-      return new Response(
-        JSON.stringify({
-          error: "Invalid action. Should be 'add' or 'retrieve'",
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
+    const supabaseClient = supabaseAdmin;
 
     let data;
-    if (action === "add") {
+
+    if (action === "get_authors") {
+      data = await getAuthors();
+    } else if (action === "get_categories") {
+      data = await getCategories();
+    } else if (action === "get_blogs") {
+      data = await getBlogs();
+    } else if (action === "add") {
+      if (!appProjectId || !projectId) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "Missing required parameters 'appProjectId' and 'projectId' for add action",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+
       // Add project schemas to database
       const { data: addSchemas, error: addSchemasError } = await supabaseClient
         .from("project_schemas")
@@ -69,13 +76,25 @@ serve(async (req) => {
         .single();
 
       if (addSchemasError) {
-        throw new Error("Failed to add project schemas: ", addSchemasError);
+        throw new Error(
+          "Failed to add project schemas: " + addSchemasError.message,
+        );
       }
 
       data = addSchemas;
-    }
+    } else if (action === "retrieve") {
+      if (!projectId) {
+        return new Response(
+          JSON.stringify({
+            error: "Missing required parameter 'projectId' for retrieve action",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
 
-    if (action === "retrieve") {
       const { data: currentSchemas, error: retrieveSchemasError } =
         await supabaseClient
           .from("project_schemas")
@@ -87,19 +106,33 @@ serve(async (req) => {
 
       if (retrieveSchemasError) {
         throw new Error(
-          "Failed to retrieve project schemas: ",
-          retrieveSchemasError,
+          "Failed to retrieve project schemas: " + retrieveSchemasError.message,
         );
       }
 
       data = currentSchemas;
+    } else {
+      return new Response(
+        JSON.stringify({
+          error:
+            "Invalid action. Valid actions: add, retrieve, get_authors, get_categories, get_blogs",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error("Schemas API Error:", error);
+    const message = error instanceof Error
+      ? error.message
+      : "An unexpected error occurred.";
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: corsHeaders,
     });

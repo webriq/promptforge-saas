@@ -144,6 +144,7 @@ serve(async (req) => {
     // If user has attachments, prioritize session-specific content for immediate access
     let relevantKnowledge;
     let chatHistory;
+    let schemaData;
 
     if (userMessage.attachments && userMessage.attachments.length > 0) {
       // For messages with attachments, search both project-wide and session-specific
@@ -158,18 +159,35 @@ serve(async (req) => {
         ...projectContext.relevantKnowledge,
       ].slice(0, 8); // Take top 8 most relevant
 
+      // Combine schema data from both contexts
+      schemaData = [
+        ...(sessionContext.schemaData || []),
+        ...(projectContext.schemaData || []),
+      ].slice(0, 5); // Take top 5 schema results
+
       chatHistory = projectContext.chatHistory;
     } else {
       // For regular messages without attachments, use standard search
       const context = await buildRAGContext(projectId, sessionId, searchQuery);
       relevantKnowledge = context.relevantKnowledge;
       chatHistory = context.chatHistory;
+      schemaData = context.schemaData || [];
     }
 
-    const context = relevantKnowledge?.map((k) => k.content).join("\n\n") || "";
+    const knowledgeContext = relevantKnowledge?.map((k) =>
+      k.content
+    ).join("\n\n") || "";
+
+    const schemaContext = schemaData?.map((s) =>
+      `${s.table_name}: ${s.title}\n${s.content || ""}`
+    ).join("\n\n") || "";
+
+    const fullContext = [knowledgeContext, schemaContext].filter(Boolean).join(
+      "\n\n---\n\n",
+    );
 
     const systemPrompt =
-      `You are a helpful AI assistant for our company dedicated to generating AI-ready content. Get information from the "Knowledge base" to answer questions.
+      `You are a helpful AI assistant for our company dedicated to generating AI-ready content. Get information from the "Knowledge base" and "Schema data" to answer questions.
       
       ROLE AND PURPOSE: Assist users in generating content guided by LLM-readiness criteria using the provided context. The generated content should be well-structured, informative, and engaging.
       
@@ -217,14 +235,14 @@ serve(async (req) => {
       }
       
       Knowledge base context:
-      ${context}
+      ${fullContext}
       
       ${
-        context.trim() === ""
+        fullContext.trim() === ""
           ? "IMPORTANT: No knowledge base content found for this project. This means no files have been uploaded yet, or the uploaded content doesn't match the query. You MUST inform the user that they need to upload relevant documents (PDF or text files) to get started. Do NOT generate generic content."
           : userMessage.attachments && userMessage.attachments.length > 0
-          ? "The above knowledge base content includes information from recently uploaded files. Use this content to provide detailed analysis and generate improved content as requested."
-          : "Use the above knowledge base content to inform your response. This includes both uploaded documents and any previously generated content (marked as 'generated_content' type). When expanding or modifying content, reference and build upon the existing generated content."
+          ? "The above knowledge base content includes information from recently uploaded files and schema data. Use this content to provide detailed analysis and generate improved content as requested."
+          : "Use the above knowledge base content to inform your response. This includes both uploaded documents, any previously generated content (marked as 'generated_content' type), and structured schema data (blog posts, authors, categories). When expanding or modifying content, reference and build upon the existing generated content."
       }
     `;
 
