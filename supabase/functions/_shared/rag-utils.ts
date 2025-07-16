@@ -323,8 +323,8 @@ export async function retrieveRelevantKnowledge(
       "search_knowledge_base_updated",
       {
         input_project_id: projectId,
-        input_session_id: null, // Pass null to search across all sessions in the project
         query_embedding: queryEmbedding,
+        input_session_id: null, // Pass null to search across all sessions in the project
         similarity_threshold: 0.5, // Lower threshold for better matches
         match_count: limit,
       },
@@ -420,8 +420,8 @@ async function retrieveSessionSpecificKnowledge(
       "search_knowledge_base_updated",
       {
         input_project_id: projectId,
-        input_session_id: sessionId, // Search session-specific content
         query_embedding: queryEmbedding,
+        input_session_id: sessionId, // Search session-specific content
         similarity_threshold: 0.3, // Lower threshold for session-specific content
         match_count: limit,
       },
