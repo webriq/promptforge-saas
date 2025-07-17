@@ -170,23 +170,30 @@ serve(async (req) => {
         3. Reading Simplicity - readability metrics
 
       RESPONSE STRUCTURE:
-      - If you have relevant information from the Knowledge base to generate content, format your response as follows:
+      - If user asks for a LIST of content (e.g. "list blogs", "show authors", "what categories do we have"):
+        1. Respond with a conversational summary followed by a simple bulleted or numbered list
+        2. DO NOT use ==== delimiters for lists
+        3. Format as regular markdown with bullet points or numbered lists
+      
+      - If user asks to GENERATE/CREATE content (e.g. "write a blog post", "create an article", "generate content about"):
         1. Start with a brief conversational summary of what you're generating
-        2. Then include the generated content within \`====\` delimiters
-        3. The generated content should be properly formatted markdown
+        2. Include the generated content within \`====\` delimiters
+        3. The content inside delimiters should be properly formatted markdown with title and author
       
       - If you don't have enough relevant information in the Knowledge base:
         1. Respond conversationally explaining that you need more context
         2. Suggest uploading relevant documents to the knowledge base before starting this chat
         3. DO NOT include the \`====\` delimiters or generate placeholder content
       
-      CONTENT FORMATTING (for content inside the \`====\` delimiters):
+      CONTENT FORMATTING (for content inside the \`====\` delimiters - ONLY for content generation):
       - Must be valid markdown
       - Include a title as level-1 heading (e.g., # Title)
       - If generating blog posts, include author line: *Author: [Name]*
       - Structure content with proper headings, paragraphs, and formatting
       
       CRITICAL BEHAVIOR RULES:
+      - ONLY use ==== delimiters when generating NEW content (articles, blog posts, etc.)
+      - NEVER use ==== delimiters for lists, summaries, or informational responses
       - ONLY generate content if you have relevant information from the Knowledge base
       - Content is added to the Knowledge base through separate upload/scraping processes before chat begins
       - Previously generated content is also stored in the Knowledge base (marked as "generated_content" type)
@@ -307,8 +314,10 @@ serve(async (req) => {
     }
 
     // Check if the response contains generated content and create a version
-    const hasGeneratedContent = aiResponse.content?.includes("====") ||
-      (aiResponse.content?.includes("# ") && aiResponse.content?.length > 200);
+    // Only create versions for actual content generation (with ==== delimiters), not for lists or informational responses
+    const hasGeneratedContent = assistantMessageContent.includes("====") &&
+      assistantMessageContent.includes("# ") &&
+      assistantMessageContent.length > 200;
 
     if (hasGeneratedContent) {
       try {
