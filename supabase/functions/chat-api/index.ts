@@ -234,29 +234,38 @@ serve(async (req) => {
     let assistantMessageId: string;
 
     if (aiResponse.tool_calls) {
-      const toolCall = aiResponse.tool_calls[0];
-      const functionName = toolCall.function.name;
+      const toolMessages: OpenAIMessage[] = [];
+      const toolResults = [];
 
-      let result;
-      if (functionName === "get_blogs") {
-        result = await getBlogs();
-      } else if (functionName === "get_authors") {
-        result = await getAuthors();
-      } else if (functionName === "get_categories") {
-        result = await getCategories();
+      for (const toolCall of aiResponse.tool_calls) {
+        const functionName = toolCall.function.name;
+
+        let result;
+        if (functionName === "get_blogs") {
+          result = await getBlogs();
+        } else if (functionName === "get_authors") {
+          result = await getAuthors();
+        } else if (functionName === "get_categories") {
+          result = await getCategories();
+        }
+        toolResults.push(result);
+
+        toolMessages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          name: functionName,
+          content: JSON.stringify(result),
+        });
       }
 
-      const toolMessage: OpenAIMessage = {
-        role: "tool",
-        tool_call_id: toolCall.id,
-        name: functionName,
-        content: JSON.stringify(result),
-      };
-
-      const conversationWithTool = [...conversation, aiResponse, toolMessage];
+      const conversationWithTools = [
+        ...conversation,
+        aiResponse,
+        ...toolMessages,
+      ];
 
       const toolResponse = await openaiClient.createChatCompletion(
-        conversationWithTool,
+        conversationWithTools,
       );
       const toolResponseData = await toolResponse.json();
       assistantMessageContent = toolResponseData.choices[0].message.content;
