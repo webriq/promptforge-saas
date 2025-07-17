@@ -3,7 +3,6 @@ import { supabaseAdmin } from "../_shared/supabase.ts";
 import { openaiClient } from "../_shared/openai-client.ts";
 import {
   buildRAGContext,
-  buildSessionSpecificRAGContext,
   storeContentVersion,
   storeKnowledgeBase,
 } from "../_shared/rag-utils.ts";
@@ -113,20 +112,16 @@ serve(async (req) => {
 
     const userMessage = messages[messages.length - 1];
 
-    // Create a more specific search query by including file names
-    const fileNames = userMessage.attachments?.map((a: any) =>
-      a.fileName
-    ).join(" ") || "";
-    const searchQuery = userMessage.content + " " + fileNames;
+    // Create search query from user message content
+    const searchQuery = userMessage.content;
 
-    // Store user message
+    // Store user message (no attachments in new workflow)
     const { error: insertError } = await supabaseAdmin
       .from("chat_messages")
       .insert({
         session_id: sessionId,
         role: userMessage.role,
         content: userMessage.content,
-        attachments: userMessage.attachments || null,
       });
 
     if (insertError) {
@@ -141,38 +136,9 @@ serve(async (req) => {
 
     const isFirstMessage = messageCount && messageCount.length <= 1;
 
-    // If user has attachments, prioritize session-specific content for immediate access
-    let relevantKnowledge;
-    let chatHistory;
-    let schemaData;
-
-    if (userMessage.attachments && userMessage.attachments.length > 0) {
-      // For messages with attachments, search both project-wide and session-specific
-      const [projectContext, sessionContext] = await Promise.all([
-        buildRAGContext(projectId, sessionId, searchQuery),
-        buildSessionSpecificRAGContext(projectId, sessionId, searchQuery),
-      ]);
-
-      // Combine and prioritize session-specific content
-      relevantKnowledge = [
-        ...sessionContext.relevantKnowledge,
-        ...projectContext.relevantKnowledge,
-      ].slice(0, 8); // Take top 8 most relevant
-
-      // Combine schema data from both contexts
-      schemaData = [
-        ...(sessionContext.schemaData || []),
-        ...(projectContext.schemaData || []),
-      ].slice(0, 5); // Take top 5 schema results
-
-      chatHistory = projectContext.chatHistory;
-    } else {
-      // For regular messages without attachments, use standard search
-      const context = await buildRAGContext(projectId, sessionId, searchQuery);
-      relevantKnowledge = context.relevantKnowledge;
-      chatHistory = context.chatHistory;
-      schemaData = context.schemaData || [];
-    }
+    // Build RAG context from knowledge base and schema data
+    const context = await buildRAGContext(projectId, sessionId, searchQuery);
+    const { relevantKnowledge, chatHistory, schemaData } = context;
 
     const knowledgeContext = relevantKnowledge?.map((k) =>
       k.content
@@ -207,7 +173,7 @@ serve(async (req) => {
       
       - If you don't have enough relevant information in the Knowledge base:
         1. Respond conversationally explaining that you need more context
-        2. Suggest uploading relevant documents
+        2. Suggest uploading relevant documents to the knowledge base before starting this chat
         3. DO NOT include the \`====\` delimiters or generate placeholder content
       
       CONTENT FORMATTING (for content inside the \`====\` delimiters):
@@ -218,30 +184,21 @@ serve(async (req) => {
       
       CRITICAL BEHAVIOR RULES:
       - ONLY generate content if you have relevant information from the Knowledge base
-      - When files are uploaded, their content appears in the Knowledge base immediately
+      - Content is added to the Knowledge base through separate upload/scraping processes before chat begins
       - Previously generated content is also stored in the Knowledge base (marked as "generated_content" type)
       - When asked to expand, modify, or build upon previous content, reference the existing generated content from the Knowledge base
-      - For file analysis requests, examine ALL available content from the Knowledge base
+      - For content analysis requests, examine ALL available content from the Knowledge base
       - Provide detailed analysis of uploaded documents when requested
       - Never generate generic content without specific context
       - Do not create fictional or placeholder information
-      - If analyzing files, reference specific sections and provide concrete recommendations
       - When expanding content, always build upon the existing generated content rather than starting from scratch
-      
-      ${
-        userMessage.attachments && userMessage.attachments.length > 0
-          ? `IMPORTANT: The user has uploaded files in this conversation. You should find content from these files in the Knowledge base below. Use this content to provide detailed analysis and recommendations.`
-          : ""
-      }
       
       Knowledge base context:
       ${fullContext}
       
       ${
         fullContext.trim() === ""
-          ? "IMPORTANT: No knowledge base content found for this project. This means no files have been uploaded yet, or the uploaded content doesn't match the query. You MUST inform the user that they need to upload relevant documents (PDF or text files) to get started. Do NOT generate generic content."
-          : userMessage.attachments && userMessage.attachments.length > 0
-          ? "The above knowledge base content includes information from recently uploaded files and schema data. Use this content to provide detailed analysis and generate improved content as requested."
+          ? "IMPORTANT: No knowledge base content found for this project. This means no content has been uploaded to the knowledge base yet. You MUST inform the user that they need to upload relevant documents or scrape content to the knowledge base before generating content. Do NOT generate generic content."
           : "Use the above knowledge base content to inform your response. This includes both uploaded documents, any previously generated content (marked as 'generated_content' type), and structured schema data (blog posts, authors, categories). When expanding or modifying content, reference and build upon the existing generated content."
       }
     `;

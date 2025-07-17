@@ -125,8 +125,12 @@ serve(async (req) => {
     // Create or update blog
     const blog = await createOrUpdateBlog(blogData, overwrite);
 
-    // Mark content version as published
-    const publishResult = await markContentVersionAsPublished(versionId);
+    // Mark content version as published with blog ID and created_at
+    const publishResult = await markContentVersionAsPublished(
+      versionId,
+      blog.id,
+      blog.created_at,
+    );
     if (!publishResult.success) {
       console.error("Failed to mark content version as published");
       // Continue anyway - the blog was created successfully

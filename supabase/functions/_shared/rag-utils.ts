@@ -283,16 +283,29 @@ export async function getLatestContentVersion(
 // New function to mark a content version as published
 export async function markContentVersionAsPublished(
   versionId: string,
+  blogId?: string,
+  blogCreatedAt?: string,
 ): Promise<{ success: boolean; published_at: string | null }> {
   try {
-    const publishedAt = new Date().toISOString();
+    const publishedAt = blogCreatedAt || new Date().toISOString();
+
+    const updateData: {
+      published: boolean;
+      published_at: string;
+      document_id?: string;
+    } = {
+      published: true,
+      published_at: publishedAt,
+    };
+
+    // Only set document_id if blogId is provided
+    if (blogId) {
+      updateData.document_id = blogId;
+    }
 
     const { data, error } = await supabaseAdmin
       .from("content_versions")
-      .update({
-        published: true,
-        published_at: publishedAt,
-      })
+      .update(updateData)
       .eq("id", versionId)
       .select("published_at")
       .single();
@@ -304,7 +317,9 @@ export async function markContentVersionAsPublished(
     }
 
     console.log(
-      `Content version ${versionId} marked as published at ${publishedAt}`,
+      `Content version ${versionId} marked as published at ${publishedAt}${
+        blogId ? ` with document_id ${blogId}` : ""
+      }`,
     );
     return { success: true, published_at: data.published_at };
   } catch (error) {
@@ -394,72 +409,6 @@ export async function buildRAGContext(
     relevantKnowledge,
     schemaData,
   };
-}
-
-export async function buildSessionSpecificRAGContext(
-  projectId: string,
-  sessionId: string,
-  query: string,
-): Promise<RAGContext> {
-  const [chatHistory, relevantKnowledge, schemaData] = await Promise.all([
-    getChatHistory(sessionId),
-    retrieveSessionSpecificKnowledge(projectId, sessionId, query),
-    searchSchemaContent(query, 5),
-  ]);
-
-  return {
-    chatHistory: chatHistory.slice(-10), // Last 10 messages for context
-    relevantKnowledge,
-    schemaData,
-  };
-}
-
-async function retrieveSessionSpecificKnowledge(
-  projectId: string,
-  sessionId: string,
-  query: string,
-  limit = 5,
-): Promise<KnowledgeBaseEntry[]> {
-  try {
-    const queryEmbedding = await generateEmbedding(query);
-
-    // Search for session-specific content first
-    const { data, error } = await supabaseAdmin.rpc(
-      "search_knowledge_base_updated",
-      {
-        input_project_id: projectId,
-        query_embedding: queryEmbedding,
-        input_session_id: sessionId, // Search session-specific content
-        similarity_threshold: 0.3, // Lower threshold for session-specific content
-        match_count: limit,
-      },
-    );
-
-    if (error) {
-      console.error("Error with session-specific RPC function:", error);
-
-      // Fallback to direct query for session-specific content
-      const { data: fallbackData, error: fallbackError } = await supabaseAdmin
-        .from("knowledge_base")
-        .select("*")
-        .eq("project_id", projectId)
-        .eq("session_id", sessionId)
-        .limit(limit);
-
-      if (fallbackError) {
-        console.error("Session-specific fallback query failed:", fallbackError);
-        return [];
-      }
-
-      return fallbackData || [];
-    }
-
-    console.log("Session-specific knowledge entries:", data?.length || 0);
-    return data || [];
-  } catch (error) {
-    console.error("Exception in retrieveSessionSpecificKnowledge:", error);
-    return [];
-  }
 }
 
 // Schema management functions - Updated to match actual DB structure
