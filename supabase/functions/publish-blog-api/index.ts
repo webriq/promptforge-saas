@@ -27,18 +27,16 @@ serve(async (req) => {
       author,
       categories = [],
       versionId,
-      projectId,
       slug,
       excerpt,
       thumbnail,
       overwrite = false,
     } = requestData;
 
-    if (!content || !title || !author || !versionId || !projectId) {
+    if (!content || !title || !author || !versionId) {
       return new Response(
         JSON.stringify({
-          error:
-            "Missing required fields: content, title, author, versionId, projectId",
+          error: "Missing required fields: content, title, author, versionId",
         }),
         {
           status: 400,
