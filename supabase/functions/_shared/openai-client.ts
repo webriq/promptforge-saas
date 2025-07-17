@@ -14,20 +14,31 @@ export class OpenAIClient {
   async createChatCompletion(
     messages: OpenAIMessage[],
     stream = false,
+    tools: any[] | undefined = undefined,
+    tool_choice: string | undefined = undefined,
   ): Promise<Response> {
+    const body: any = {
+      model: "gpt-4.1-mini",
+      messages,
+      stream,
+      temperature: 0.7,
+      max_tokens: 2000,
+    };
+
+    if (tools) {
+      body.tools = tools;
+    }
+    if (tool_choice) {
+      body.tool_choice = tool_choice;
+    }
+
     const response = await fetch(`${this.baseURL}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
       },
-      body: JSON.stringify({
-        model: "gpt-4.1-mini",
-        messages,
-        stream,
-        temperature: 0.7,
-        max_tokens: 2000,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

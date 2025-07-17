@@ -36,8 +36,10 @@ export interface RAGContext {
 }
 
 export interface OpenAIMessage {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
+  tool_call_id?: string;
+  name?: string;
 }
 
 export interface OpenAIChatResponse {

@@ -3,10 +3,14 @@ import { supabaseAdmin } from "../_shared/supabase.ts";
 import { openaiClient } from "../_shared/openai-client.ts";
 import {
   buildRAGContext,
+  getAuthors,
+  getBlogs,
+  getCategories,
   storeContentVersion,
   storeKnowledgeBase,
 } from "../_shared/rag-utils.ts";
 import type { ChatMessage, OpenAIMessage } from "../_shared/types.ts";
+import { tools } from "../_shared/openai-fn-tools.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -213,12 +217,51 @@ serve(async (req) => {
     ];
 
     // Generate AI response
-    const response = await openaiClient.createChatCompletion(conversation);
+    const response = await openaiClient.createChatCompletion(
+      conversation,
+      false,
+      tools,
+      "auto",
+    );
     const aiResponseData = await response.json();
-    const aiResponseContent = aiResponseData.choices[0].message.content;
+    const aiResponse = aiResponseData.choices[0].message;
 
-    if (!aiResponseContent) {
+    if (!aiResponse.content && !aiResponse.tool_calls) {
       throw new Error("OpenAI returned an empty response.");
+    }
+
+    let assistantMessageContent: string;
+    let assistantMessageId: string;
+
+    if (aiResponse.tool_calls) {
+      const toolCall = aiResponse.tool_calls[0];
+      const functionName = toolCall.function.name;
+
+      let result;
+      if (functionName === "get_blogs") {
+        result = await getBlogs();
+      } else if (functionName === "get_authors") {
+        result = await getAuthors();
+      } else if (functionName === "get_categories") {
+        result = await getCategories();
+      }
+
+      const toolMessage: OpenAIMessage = {
+        role: "tool",
+        tool_call_id: toolCall.id,
+        name: functionName,
+        content: JSON.stringify(result),
+      };
+
+      const conversationWithTool = [...conversation, aiResponse, toolMessage];
+
+      const toolResponse = await openaiClient.createChatCompletion(
+        conversationWithTool,
+      );
+      const toolResponseData = await toolResponse.json();
+      assistantMessageContent = toolResponseData.choices[0].message.content;
+    } else {
+      assistantMessageContent = aiResponse.content;
     }
 
     // Store assistant message
@@ -228,7 +271,7 @@ serve(async (req) => {
         .insert({
           session_id: sessionId,
           role: "assistant",
-          content: aiResponseContent,
+          content: assistantMessageContent,
         })
         .select("id")
         .single();
@@ -238,13 +281,14 @@ serve(async (req) => {
         `Failed to store assistant message: ${assistantError.message}`,
       );
     }
+    assistantMessageId = assistantMessage.id;
 
     // Generate and update session title if this is the first message
     if (isFirstMessage) {
       try {
         const sessionTitle = await generateSessionTitle(
           userMessage.content,
-          aiResponseContent,
+          assistantMessageContent,
         );
         await updateSessionTitle(sessionId, projectId, sessionTitle);
       } catch (titleError) {
@@ -254,12 +298,12 @@ serve(async (req) => {
     }
 
     // Check if the response contains generated content and create a version
-    const hasGeneratedContent = aiResponseContent.includes("====") ||
-      (aiResponseContent.includes("# ") && aiResponseContent.length > 200);
+    const hasGeneratedContent = aiResponse.content?.includes("====") ||
+      (aiResponse.content?.includes("# ") && aiResponse.content?.length > 200);
 
     if (hasGeneratedContent) {
       try {
-        // Parse the content to extract title and author
+        // Parse the generated content to extract title, author, etc.
         const parseContentForVersion = (content: string) => {
           let title = "AI-Generated Content";
           let author = "AI Assistant";
@@ -287,12 +331,12 @@ serve(async (req) => {
         };
 
         const { title, author, content: versionContent } =
-          parseContentForVersion(aiResponseContent);
+          parseContentForVersion(assistantMessageContent);
 
         const versionData = await storeContentVersion(
           sessionId,
           projectId,
-          assistantMessage.id,
+          assistantMessageId,
           title,
           author,
           versionContent,
@@ -314,7 +358,7 @@ serve(async (req) => {
               title: title,
               author: author,
               version_number: versionData.version_number,
-              message_id: assistantMessage.id,
+              message_id: assistantMessageId,
               generated_at: new Date().toISOString(),
             },
           );
