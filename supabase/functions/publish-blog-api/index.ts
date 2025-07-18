@@ -3,6 +3,8 @@ import {
   createOrUpdateBlog,
   generateSlug,
   getBlogBySlug,
+  getContentVersionDetails,
+  getExistingPublishedBlogId,
   markContentVersionAsPublished,
   parseAndCreateAuthorsCategories,
 } from "../_shared/rag-utils.ts";
@@ -52,23 +54,41 @@ serve(async (req) => {
     // Generate slug if not provided
     const blogSlug = slug || generateSlug(title);
 
-    // Check if blog already exists
-    const existingBlog = await getBlogBySlug(blogSlug);
-    if (existingBlog && !overwrite) {
-      return new Response(
-        JSON.stringify({
-          error: "Blog with this slug already exists",
-          exists: true,
-          existingBlog: {
-            id: existingBlog.id,
-            title: existingBlog.title,
-            slug: existingBlog.slug,
+    // Get content version details to find existing published blog for same content
+    const versionDetails = await getContentVersionDetails(versionId);
+    let existingBlogId = null;
+
+    if (versionDetails) {
+      existingBlogId = await getExistingPublishedBlogId(
+        versionDetails.sessionId,
+        versionDetails.projectId,
+      );
+    }
+
+    // Check if blog already exists by slug (for new content)
+    if (!existingBlogId) {
+      const existingBlog = await getBlogBySlug(blogSlug);
+      if (existingBlog && !overwrite) {
+        return new Response(
+          JSON.stringify({
+            error: "Blog with this slug already exists",
+            exists: true,
+            existingBlog: {
+              id: existingBlog.id,
+              title: existingBlog.title,
+              slug: existingBlog.slug,
+            },
+          }),
+          {
+            status: 409,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
           },
-        }),
-        {
-          status: 409,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
+        );
+      }
+    } else {
+      // If we have an existing blog ID, we're updating existing content
+      console.log(
+        `[Blog Publish API] Updating existing blog with ID: ${existingBlogId}`,
       );
     }
 
@@ -121,7 +141,11 @@ serve(async (req) => {
     };
 
     // Create or update blog
-    const blog = await createOrUpdateBlog(blogData, overwrite);
+    const blog = await createOrUpdateBlog(
+      blogData,
+      overwrite,
+      existingBlogId || undefined,
+    );
 
     // Mark content version as published with blog ID and created_at
     const publishResult = await markContentVersionAsPublished(

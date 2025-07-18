@@ -280,6 +280,59 @@ export async function getLatestContentVersion(
   }
 }
 
+// Helper function to get session and project IDs from version ID
+export async function getContentVersionDetails(
+  versionId: string,
+): Promise<{ sessionId: string; projectId: string } | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("content_versions")
+      .select("session_id, project_id")
+      .eq("id", versionId)
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return {
+      sessionId: data.session_id,
+      projectId: data.project_id,
+    };
+  } catch (error) {
+    console.error("Error getting content version details:", error);
+    return null;
+  }
+}
+
+// Helper function to find existing published blog ID for the same content
+export async function getExistingPublishedBlogId(
+  sessionId: string,
+  projectId: string,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("content_versions")
+      .select("document_id")
+      .eq("session_id", sessionId)
+      .eq("project_id", projectId)
+      .eq("published", true)
+      .not("document_id", "is", null)
+      .order("published_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return data.document_id;
+  } catch (error) {
+    console.error("Error getting existing published blog ID:", error);
+    return null;
+  }
+}
+
 // New function to mark a content version as published
 export async function markContentVersionAsPublished(
   versionId: string,
@@ -545,13 +598,29 @@ export async function createOrUpdateBlog(
     seo_fields?: Record<string, any>;
   },
   overwrite = false,
+  existingBlogId?: string,
 ): Promise<BlogSchema> {
-  // Check if blog already exists
-  const { data: existingBlog } = await supabaseAdmin
-    .from("blog_schema")
-    .select("id")
-    .eq("slug", blogData.slug)
-    .single();
+  let existingBlog = null;
+
+  // First, check if we have a specific blog ID to update
+  if (existingBlogId) {
+    const { data } = await supabaseAdmin
+      .from("blog_schema")
+      .select("id")
+      .eq("id", existingBlogId)
+      .single();
+    existingBlog = data;
+  }
+
+  // If no specific blog ID, check by slug
+  if (!existingBlog) {
+    const { data } = await supabaseAdmin
+      .from("blog_schema")
+      .select("id")
+      .eq("slug", blogData.slug)
+      .single();
+    existingBlog = data;
+  }
 
   if (existingBlog && !overwrite) {
     throw new Error(
