@@ -559,11 +559,24 @@ export async function createOrUpdateBlog(
     );
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("blog_schema")
-    .upsert(blogData)
-    .select()
-    .single();
+  let data, error;
+
+  if (existingBlog && overwrite) {
+    // Update existing blog
+    ({ data, error } = await supabaseAdmin
+      .from("blog_schema")
+      .update(blogData)
+      .eq("id", existingBlog.id)
+      .select()
+      .single());
+  } else {
+    // Create new blog
+    ({ data, error } = await supabaseAdmin
+      .from("blog_schema")
+      .insert(blogData)
+      .select()
+      .single());
+  }
 
   if (error) {
     throw new Error(`Failed to create/update blog: ${error.message}`);
