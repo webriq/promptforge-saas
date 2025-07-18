@@ -188,10 +188,12 @@ serve(async (req) => {
       CONTENT FORMATTING (for content inside the \`====\` delimiters - ONLY for content generation):
       - Must be valid markdown
       - Include a title as level-1 heading (e.g., # Title)
-      - If generating blog posts, include author line: *Author: [Name]*
+      - If generating blog posts, include author line if defined by user: *Author: [Author]*
+      - If generating blog posts, include category line with relevant category tags based on the generated content or as defined by the user: *Category: [Category]*
       - Structure content with proper headings, paragraphs, and formatting
       
       CRITICAL BEHAVIOR RULES:
+      - Always acknowledge user's request conversationally before returning the response
       - ONLY use ==== delimiters when generating NEW content (articles, blog posts, etc.)
       - NEVER use ==== delimiters for lists, summaries, or informational responses
       - ONLY generate content if you have relevant information from the Knowledge base
