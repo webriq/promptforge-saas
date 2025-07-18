@@ -144,9 +144,12 @@ serve(async (req) => {
     const context = await buildRAGContext(projectId, sessionId, searchQuery);
     const { relevantKnowledge, chatHistory, schemaData } = context;
 
-    const knowledgeContext = relevantKnowledge?.map((k) =>
-      k.content
-    ).join("\n\n") || "";
+    const knowledgeContext = relevantKnowledge?.map((k: any) => {
+      const sourceLabel = k.source === "generated_content"
+        ? "[PREVIOUSLY GENERATED]"
+        : `[${k.source}]`;
+      return `${sourceLabel} ${k.content}`;
+    }).join("\n\n") || "";
 
     const schemaContext = schemaData?.map((s) =>
       `${s.table_name}: ${s.title}\n${s.content || ""}`
@@ -205,6 +208,8 @@ serve(async (req) => {
       - Never generate generic content without specific context
       - Do not create fictional or placeholder information
       - When expanding content, always build upon the existing generated content rather than starting from scratch
+      - If you see content marked as "generated_content" in the Knowledge base, it means this content was previously generated in this project and you should use it as the foundation for updates, expansions, or revisions
+      - Pay special attention to content with source "generated_content" as it represents your previous work that can be built upon
       
       Knowledge base context:
       ${fullContext}

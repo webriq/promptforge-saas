@@ -334,6 +334,9 @@ export async function retrieveRelevantKnowledge(
   limit = 5,
 ): Promise<KnowledgeBaseEntry[]> {
   try {
+    console.log(`[RAG] Retrieving knowledge for project: ${projectId}`);
+    console.log(`[RAG] Query: "${query}"`);
+
     const queryEmbedding = await generateEmbedding(query);
 
     // First, try the custom function for vector similarity search
@@ -344,35 +347,85 @@ export async function retrieveRelevantKnowledge(
         input_project_id: projectId,
         query_embedding: queryEmbedding,
         input_session_id: null, // Pass null to search across all sessions in the project
-        similarity_threshold: 0.5, // Lower threshold for better matches
+        similarity_threshold: 0.3, // Lower threshold for better matches
         match_count: limit,
       },
     );
 
     if (error) {
-      console.error("Error with RPC function:", error);
+      console.error("[RAG] Error with RPC function:", error);
 
       // Fallback to direct query if RPC function fails
-      console.log("Falling back to direct query...");
+      console.log("[RAG] Falling back to direct query...");
       const { data: fallbackData, error: fallbackError } = await supabaseAdmin
         .from("knowledge_base")
         .select("*")
         .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
         .limit(limit);
 
       if (fallbackError) {
-        console.error("Fallback query also failed:", fallbackError);
+        console.error("[RAG] Fallback query also failed:", fallbackError);
         return [];
       }
 
-      console.log("Fallback retrieved entries:", fallbackData?.length || 0);
+      console.log(
+        `[RAG] Fallback retrieved entries: ${fallbackData?.length || 0}`,
+      );
+      if (fallbackData && fallbackData.length > 0) {
+        console.log(
+          `[RAG] Fallback sources: ${
+            fallbackData.map((d: any) => d.source).join(", ")
+          }`,
+        );
+      }
       return fallbackData || [];
     }
 
-    console.log("RPC retrieved knowledge entries:", data?.length || 0);
+    console.log(`[RAG] RPC retrieved knowledge entries: ${data?.length || 0}`);
+    if (data && data.length > 0) {
+      console.log(
+        `[RAG] Retrieved sources: ${data.map((d: any) => d.source).join(", ")}`,
+      );
+      console.log(
+        `[RAG] Generated content count: ${
+          data.filter((d: any) => d.source === "generated_content").length
+        }`,
+      );
+    } else {
+      console.log(
+        "[RAG] No relevant knowledge found, trying broader search...",
+      );
+
+      // If no results, try a broader search without similarity threshold
+      const { data: broaderData, error: broaderError } = await supabaseAdmin
+        .from("knowledge_base")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(limit * 2); // Get more results for broader search
+
+      if (broaderError) {
+        console.error("[RAG] Broader search failed:", broaderError);
+        return [];
+      }
+
+      console.log(
+        `[RAG] Broader search retrieved entries: ${broaderData?.length || 0}`,
+      );
+      if (broaderData && broaderData.length > 0) {
+        console.log(
+          `[RAG] Broader search sources: ${
+            broaderData.map((d: any) => d.source).join(", ")
+          }`,
+        );
+      }
+      return broaderData || [];
+    }
+
     return data || [];
   } catch (error) {
-    console.error("Exception in retrieveRelevantKnowledge:", error);
+    console.error("[RAG] Exception in retrieveRelevantKnowledge:", error);
     return [];
   }
 }
@@ -398,11 +451,37 @@ export async function buildRAGContext(
   sessionId: string,
   query: string,
 ): Promise<RAGContext> {
+  console.log(
+    `[RAG Context] Building context for project: ${projectId}, session: ${sessionId}`,
+  );
+  console.log(`[RAG Context] Query: "${query}"`);
+
   const [chatHistory, relevantKnowledge, schemaData] = await Promise.all([
     getChatHistory(sessionId),
     retrieveRelevantKnowledge(projectId, query),
     searchSchemaContent(query, 5),
   ]);
+
+  console.log(`[RAG Context] Chat history: ${chatHistory.length} messages`);
+  console.log(
+    `[RAG Context] Relevant knowledge: ${relevantKnowledge.length} entries`,
+  );
+  console.log(`[RAG Context] Schema data: ${schemaData.length} entries`);
+
+  if (relevantKnowledge.length > 0) {
+    const generatedContentCount = relevantKnowledge.filter((k: any) =>
+      k.source === "generated_content"
+    ).length;
+    console.log(
+      `[RAG Context] Generated content entries: ${generatedContentCount}`,
+    );
+
+    if (generatedContentCount > 0) {
+      console.log(
+        `[RAG Context] Generated content found - previous AI content available for expansion`,
+      );
+    }
+  }
 
   return {
     chatHistory: chatHistory.slice(-10), // Last 10 messages for context
