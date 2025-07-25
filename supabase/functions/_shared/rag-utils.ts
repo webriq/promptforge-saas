@@ -344,7 +344,7 @@ export async function getExistingPublishedBlogId(
   }
 }
 
-// New function to unpublish all previously published versions for a session/project
+// Unpublish all previously published versions for a session/project
 export async function unpublishAllPreviousVersions(
   sessionId: string,
   projectId: string,
@@ -387,7 +387,7 @@ export async function unpublishAllPreviousVersions(
   }
 }
 
-// New function to mark a content version as published
+// Mark a content version as published
 export async function markContentVersionAsPublished(
   versionId: string | null | undefined,
   blogId?: string,
@@ -436,6 +436,36 @@ export async function markContentVersionAsPublished(
   } catch (error) {
     console.error("Error marking content version as published:", error);
     return { success: false, published_at: null };
+  }
+}
+
+// Update saved content for a version
+export async function updateContentVersion(
+  versionId: string,
+  content: string,
+): Promise<{ success: boolean; updated_at: string | null }> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("content_versions")
+      .update({
+        content,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", versionId)
+      .select("updated_at")
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update content version: ${error.message}`);
+    }
+
+    console.log(
+      `Updated content version ${versionId} with updated_at: ${data.updated_at}`,
+    );
+    return { success: true, updated_at: data.updated_at };
+  } catch (error) {
+    console.error("Error updating content version:", error);
+    return { success: false, updated_at: null };
   }
 }
 
@@ -567,17 +597,15 @@ export async function buildRAGContext(
   );
   console.log(`[RAG Context] Query: "${query}"`);
 
-  const [chatHistory, relevantKnowledge, schemaData] = await Promise.all([
+  const [chatHistory, relevantKnowledge] = await Promise.all([
     getChatHistory(sessionId),
     retrieveRelevantKnowledge(projectId, query),
-    searchSchemaContent(query, 5),
   ]);
 
   console.log(`[RAG Context] Chat history: ${chatHistory.length} messages`);
   console.log(
     `[RAG Context] Relevant knowledge: ${relevantKnowledge.length} entries`,
   );
-  console.log(`[RAG Context] Schema data: ${schemaData.length} entries`);
 
   if (relevantKnowledge.length > 0) {
     const generatedContentCount = relevantKnowledge.filter((k: any) =>
@@ -597,7 +625,6 @@ export async function buildRAGContext(
   return {
     chatHistory: chatHistory.slice(-10), // Last 10 messages for context
     relevantKnowledge,
-    schemaData,
   };
 }
 

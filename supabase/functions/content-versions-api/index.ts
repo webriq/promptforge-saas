@@ -4,6 +4,7 @@ import {
   getContentVersions,
   getLatestContentVersion,
   markContentVersionAsPublished,
+  updateContentVersion,
 } from "../_shared/rag-utils.ts";
 
 const corsHeaders = {
@@ -18,7 +19,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, sessionId, versionId } = await req.json();
+    const { action, sessionId, versionId, content } = await req.json();
 
     if (!action) {
       return new Response(
@@ -74,6 +75,21 @@ serve(async (req) => {
           );
         }
         data = await getLatestContentVersion(sessionId);
+        break;
+
+      case "update_content":
+        if (!versionId) {
+          return new Response(
+            JSON.stringify({
+              error: "versionId is required for 'update_content' action",
+            }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
+        data = await updateContentVersion(versionId, content);
         break;
 
       case "mark_published":
