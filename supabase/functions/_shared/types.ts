@@ -32,7 +32,6 @@ export interface KnowledgeBaseEntry {
 export interface RAGContext {
   chatHistory: ChatMessage[];
   relevantKnowledge: KnowledgeBaseEntry[];
-  schemaData?: SchemaSearchResult[];
 }
 
 export interface OpenAIMessage {

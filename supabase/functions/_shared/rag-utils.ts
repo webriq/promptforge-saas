@@ -369,32 +369,69 @@ export async function addPublishedContentToKnowledgeBase(
 
     const embedding = await generateEmbedding(content);
 
-    const { error } = await supabaseAdmin.from("knowledge_base").upsert({
-      project_id: projectId,
-      session_id: sessionId,
-      content,
-      source: "published_content",
-      metadata: {
-        type: "published_content",
-        title: title,
-        author: author,
-        content_version_id: versionId,
-        published_at: new Date().toISOString(),
-      },
-      embedding,
-    }, {
-      onConflict: "project_id,session_id,source",
-    });
+    // Check if entry already exists for this content version
+    const { data: existingEntry } = await supabaseAdmin
+      .from("knowledge_base")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("session_id", sessionId)
+      .eq("source", "published_content")
+      .eq("metadata->>content_version_id", versionId)
+      .single();
 
-    if (error) {
-      throw new Error(
-        `Failed to add published content to knowledge base: ${error.message}`,
+    if (existingEntry) {
+      // Update existing entry
+      const { error } = await supabaseAdmin
+        .from("knowledge_base")
+        .update({
+          content,
+          metadata: {
+            type: "published_content",
+            title: title,
+            author: author,
+            content_version_id: versionId,
+            updated_at: new Date().toISOString(),
+          },
+          embedding,
+        })
+        .eq("id", existingEntry.id);
+
+      if (error) {
+        throw new Error(
+          `Failed to update published content in knowledge base: ${error.message}`,
+        );
+      }
+
+      console.log(
+        `[Knowledge Base] Successfully updated existing published content in knowledge base for session ${sessionId}`,
+      );
+    } else {
+      // Insert new entry
+      const { error } = await supabaseAdmin.from("knowledge_base").insert({
+        project_id: projectId,
+        session_id: sessionId,
+        content,
+        source: "published_content",
+        metadata: {
+          type: "published_content",
+          title: title,
+          author: author,
+          content_version_id: versionId,
+          published_at: new Date().toISOString(),
+        },
+        embedding,
+      });
+
+      if (error) {
+        throw new Error(
+          `Failed to add published content to knowledge base: ${error.message}`,
+        );
+      }
+
+      console.log(
+        `[Knowledge Base] Successfully added new published content to knowledge base for session ${sessionId}`,
       );
     }
-
-    console.log(
-      `[Knowledge Base] Successfully added published content to knowledge base for session ${sessionId}`,
-    );
   } catch (error) {
     console.error("Error adding published content to knowledge base:", error);
     throw error;
@@ -888,12 +925,18 @@ export async function buildRAGContext(
     const webScrapingCount = relevantKnowledge.filter((k: any) =>
       k.source === "web_scraping"
     ).length;
+    const uploadedContentCount = relevantKnowledge.filter((k: any) =>
+      k.source === "user_upload"
+    ).length;
 
     console.log(
       `[RAG Context] Published content entries: ${publishedContentCount}`,
     );
     console.log(
       `[RAG Context] Web scraping entries: ${webScrapingCount}`,
+    );
+    console.log(
+      `[RAG Context] Uploaded document entries: ${uploadedContentCount}`,
     );
 
     if (publishedContentCount > 0) {
