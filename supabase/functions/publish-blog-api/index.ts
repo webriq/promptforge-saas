@@ -138,6 +138,7 @@ serve(async (req) => {
         title: title,
         description: excerpt || content.substring(0, 160),
       },
+      content_version_id: versionId,
     };
 
     // Create or update blog
@@ -147,11 +148,23 @@ serve(async (req) => {
       existingBlogId || undefined,
     );
 
-    // Mark content version as published with blog ID and created_at
+    // Unpublish previous version if it exists
+    if (existingBlogId) {
+      await markContentVersionAsPublished(
+        versionDetails?.id,
+        existingBlogId,
+        versionDetails?.createdAt,
+        false, // Mark as unpublished
+        true, // Mark as updated
+      );
+    }
+
+    // Mark current content version as published
     const publishResult = await markContentVersionAsPublished(
       versionId,
       blog.id,
       blog.created_at,
+      true, // Mark as published
     );
     if (!publishResult.success) {
       console.error("Failed to mark content version as published");

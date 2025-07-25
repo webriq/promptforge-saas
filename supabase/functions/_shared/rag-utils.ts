@@ -283,11 +283,19 @@ export async function getLatestContentVersion(
 // Helper function to get session and project IDs from version ID
 export async function getContentVersionDetails(
   versionId: string,
-): Promise<{ sessionId: string; projectId: string } | null> {
+): Promise<
+  {
+    id: string | undefined;
+    sessionId: string;
+    projectId: string;
+    createdAt: string;
+    document_id: string;
+  } | null
+> {
   try {
     const { data, error } = await supabaseAdmin
       .from("content_versions")
-      .select("session_id, project_id")
+      .select("id, session_id, project_id, created_at, document_id")
       .eq("id", versionId)
       .single();
 
@@ -296,8 +304,11 @@ export async function getContentVersionDetails(
     }
 
     return {
+      id: data.id,
       sessionId: data.session_id,
       projectId: data.project_id,
+      createdAt: data.created_at,
+      document_id: data.document_id,
     };
   } catch (error) {
     console.error("Error getting content version details:", error);
@@ -335,20 +346,24 @@ export async function getExistingPublishedBlogId(
 
 // New function to mark a content version as published
 export async function markContentVersionAsPublished(
-  versionId: string,
+  versionId: string | null | undefined,
   blogId?: string,
   blogCreatedAt?: string,
+  isPublished?: boolean | undefined,
+  isUpdated?: boolean,
 ): Promise<{ success: boolean; published_at: string | null }> {
   try {
     const publishedAt = blogCreatedAt || new Date().toISOString();
 
     const updateData: {
-      published: boolean;
+      published: boolean | undefined;
       published_at: string;
       document_id?: string;
+      updated_at?: string | null;
     } = {
-      published: true,
+      published: isPublished,
       published_at: publishedAt,
+      updated_at: isUpdated ? new Date().toISOString() : null,
     };
 
     // Only set document_id if blogId is provided
@@ -596,6 +611,7 @@ export async function createOrUpdateBlog(
     categories?: Record<string, any>;
     thumbnail_img?: Record<string, any>;
     seo_fields?: Record<string, any>;
+    content_version_id?: string;
   },
   overwrite = false,
   existingBlogId?: string,
