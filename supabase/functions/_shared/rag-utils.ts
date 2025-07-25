@@ -344,6 +344,49 @@ export async function getExistingPublishedBlogId(
   }
 }
 
+// New function to unpublish all previously published versions for a session/project
+export async function unpublishAllPreviousVersions(
+  sessionId: string,
+  projectId: string,
+  excludeVersionId?: string,
+): Promise<{ success: boolean; unpublishedCount: number }> {
+  try {
+    // Build the query to find all published versions for this session/project
+    let query = supabaseAdmin
+      .from("content_versions")
+      .update({
+        published: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("session_id", sessionId)
+      .eq("project_id", projectId)
+      .eq("published", true);
+
+    // Exclude the current version being published if provided
+    if (excludeVersionId) {
+      query = query.neq("id", excludeVersionId);
+    }
+
+    const { data, error } = await query.select("id");
+
+    if (error) {
+      throw new Error(
+        `Failed to unpublish previous versions: ${error.message}`,
+      );
+    }
+
+    const unpublishedCount = data ? data.length : 0;
+    console.log(
+      `Unpublished ${unpublishedCount} previous versions for session ${sessionId}`,
+    );
+
+    return { success: true, unpublishedCount };
+  } catch (error) {
+    console.error("Error unpublishing previous versions:", error);
+    return { success: false, unpublishedCount: 0 };
+  }
+}
+
 // New function to mark a content version as published
 export async function markContentVersionAsPublished(
   versionId: string | null | undefined,

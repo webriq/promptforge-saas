@@ -7,6 +7,7 @@ import {
   getExistingPublishedBlogId,
   markContentVersionAsPublished,
   parseAndCreateAuthorsCategories,
+  unpublishAllPreviousVersions,
 } from "../_shared/rag-utils.ts";
 import type { BlogPublishRequest } from "../_shared/types.ts";
 
@@ -148,15 +149,26 @@ serve(async (req) => {
       existingBlogId || undefined,
     );
 
-    // Unpublish previous version if it exists
-    if (existingBlogId) {
-      await markContentVersionAsPublished(
-        versionDetails?.id,
-        existingBlogId,
-        versionDetails?.createdAt,
-        false, // Mark as unpublished
-        true, // Mark as updated
+    // Unpublish all previous versions for this session/project
+    if (versionDetails) {
+      console.log(
+        `Unpublishing all previous versions for session: ${versionDetails.sessionId}, project: ${versionDetails.projectId}`,
       );
+
+      const unpublishResult = await unpublishAllPreviousVersions(
+        versionDetails.sessionId,
+        versionDetails.projectId,
+        versionId, // Exclude the current version being published
+      );
+
+      if (unpublishResult.success) {
+        console.log(
+          `Successfully unpublished ${unpublishResult.unpublishedCount} previous versions`,
+        );
+      } else {
+        console.error("Failed to unpublish previous versions");
+        // Continue anyway - we still want to publish the current version
+      }
     }
 
     // Mark current content version as published
