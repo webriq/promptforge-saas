@@ -184,10 +184,11 @@ serve(async (req) => {
         2. DO NOT use ==== delimiters for lists
         3. Format as regular markdown with bullet points or numbered lists
       
-      - If user asks to GENERATE/CREATE content (e.g. "write a blog post", "create an article", "generate content about"):
-        1. Start with a brief conversational summary of what you're generating
-        2. Include the generated content within \`====\` delimiters
-        3. The content inside delimiters should be properly formatted markdown with title and author
+      - If user asks to GENERATE/CREATE/EXPAND/REVISE content (e.g. "write a blog post", "create an article", "expand the current blog post", "make it more detailed"):
+        1. ALWAYS start with a warm, conversational acknowledgment (e.g., "Certainly! I'll expand the current blog post to be more detailed..." or "I'd be happy to help you create...")
+        2. Briefly explain what you're going to do or how you'll approach the task
+        3. Include the generated content within \`====\` delimiters
+        4. The content inside delimiters should be properly formatted markdown with title and author
       
       - If you don't have enough relevant information in the Knowledge base:
         1. Respond conversationally explaining that you need more context
@@ -202,7 +203,8 @@ serve(async (req) => {
       - Structure content with proper headings, paragraphs, and formatting
       
       CRITICAL BEHAVIOR RULES:
-      - Always acknowledge user's request conversationally before returning the response
+      - MANDATORY: Always start your response with a warm, conversational acknowledgment of the user's request (e.g., "Certainly!", "I'd be happy to help!", "Absolutely!")
+      - For content generation/expansion requests, acknowledge what you're going to do and how you'll approach it
       - ONLY use ==== delimiters when generating NEW content (articles, blog posts, etc.)
       - NEVER use ==== delimiters for lists, summaries, or informational responses
       - ONLY generate content if you have relevant information from the Knowledge base
@@ -224,8 +226,8 @@ serve(async (req) => {
       
       ${
         fullContext.trim() === ""
-          ? "IMPORTANT: No knowledge base content found for this project. This means no content has been uploaded to the knowledge base yet, and no content has been published. You MUST inform the user that they need to upload relevant documents, scrape content, or publish existing draft content to the knowledge base before generating new content. Do NOT generate generic content."
-          : "Use the above knowledge base content to inform your response. This includes uploaded documents, published content, web-scraped content, and structured schema data (blog posts, authors, categories). When expanding or modifying content, reference and build upon the existing published content."
+          ? "IMPORTANT: No knowledge base content found for this project. This means no content has been uploaded to the knowledge base yet, and no content has been published. You MUST start with a conversational acknowledgment, then inform the user that they need to upload relevant documents, scrape content, or publish existing draft content to the knowledge base before generating new content. Do NOT generate generic content."
+          : "Use the above knowledge base content to inform your response. This includes uploaded documents, published content, web-scraped content, and structured schema data (blog posts, authors, categories). When expanding or modifying content, reference and build upon the existing published content. Remember to always start with a conversational acknowledgment."
       }
     `;
 
