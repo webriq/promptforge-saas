@@ -3,6 +3,7 @@ import {
   getContentVersion,
   getContentVersions,
   getLatestContentVersion,
+  getPublishedContentVersions,
   markContentVersionAsPublished,
   updateContentVersion,
 } from "../_shared/rag-utils.ts";
@@ -19,7 +20,8 @@ serve(async (req) => {
   }
 
   try {
-    const { action, sessionId, versionId, content } = await req.json();
+    const { action, sessionId, projectId, versionId, content } = await req
+      .json();
 
     if (!action) {
       return new Response(
@@ -47,6 +49,21 @@ serve(async (req) => {
           );
         }
         data = await getContentVersions(sessionId);
+        break;
+
+      case "list_published":
+        if (!projectId) {
+          return new Response(
+            JSON.stringify({
+              error: "projectId is required for 'list_published' action",
+            }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
+        data = await getPublishedContentVersions(projectId);
         break;
 
       case "get":
@@ -122,7 +139,7 @@ serve(async (req) => {
         return new Response(
           JSON.stringify({
             error:
-              "Invalid action. Valid actions: list, get, latest, mark_published",
+              "Invalid action. Valid actions: list, list_published, get, latest, update_content, mark_published",
           }),
           {
             status: 400,

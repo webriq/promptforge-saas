@@ -316,6 +316,212 @@ export async function getContentVersionDetails(
   }
 }
 
+// Get all published content versions for a project (for knowledge base)
+export async function getPublishedContentVersions(
+  projectId: string,
+): Promise<
+  Array<{
+    id: string;
+    session_id: string;
+    title: string;
+    author: string;
+    content: string;
+    created_at: string;
+    published_at: string;
+  }>
+> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("content_versions")
+      .select(
+        "id, session_id, title, author, content, created_at, published_at",
+      )
+      .eq("project_id", projectId)
+      .eq("published", true)
+      .order("published_at", { ascending: false });
+
+    if (error) {
+      throw new Error(
+        `Failed to get published content versions: ${error.message}`,
+      );
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Error getting published content versions:", error);
+    return [];
+  }
+}
+
+// Add or update knowledge base entry for published content
+export async function addPublishedContentToKnowledgeBase(
+  projectId: string,
+  sessionId: string,
+  versionId: string,
+  title: string,
+  author: string,
+  content: string,
+): Promise<void> {
+  try {
+    console.log(
+      `[Knowledge Base] Adding published content version ${versionId} to knowledge base`,
+    );
+
+    const embedding = await generateEmbedding(content);
+
+    const { error } = await supabaseAdmin.from("knowledge_base").upsert({
+      project_id: projectId,
+      session_id: sessionId,
+      content,
+      source: "published_content",
+      metadata: {
+        type: "published_content",
+        title: title,
+        author: author,
+        content_version_id: versionId,
+        published_at: new Date().toISOString(),
+      },
+      embedding,
+    }, {
+      onConflict: "project_id,session_id,source",
+    });
+
+    if (error) {
+      throw new Error(
+        `Failed to add published content to knowledge base: ${error.message}`,
+      );
+    }
+
+    console.log(
+      `[Knowledge Base] Successfully added published content to knowledge base for session ${sessionId}`,
+    );
+  } catch (error) {
+    console.error("Error adding published content to knowledge base:", error);
+    throw error;
+  }
+}
+
+// Update knowledge base entry for published content
+export async function updatePublishedContentInKnowledgeBase(
+  projectId: string,
+  sessionId: string,
+  versionId: string,
+  title: string,
+  author: string,
+  content: string,
+): Promise<void> {
+  try {
+    console.log(
+      `[Knowledge Base] Updating published content version ${versionId} in knowledge base`,
+    );
+
+    const embedding = await generateEmbedding(content);
+
+    // Update existing knowledge base entry for this session
+    const { error } = await supabaseAdmin
+      .from("knowledge_base")
+      .update({
+        content,
+        metadata: {
+          type: "published_content",
+          title: title,
+          author: author,
+          content_version_id: versionId,
+          updated_at: new Date().toISOString(),
+        },
+        embedding,
+      })
+      .eq("project_id", projectId)
+      .eq("session_id", sessionId)
+      .eq("source", "published_content");
+
+    if (error) {
+      throw new Error(
+        `Failed to update published content in knowledge base: ${error.message}`,
+      );
+    }
+
+    console.log(
+      `[Knowledge Base] Successfully updated published content in knowledge base for session ${sessionId}`,
+    );
+  } catch (error) {
+    console.error("Error updating published content in knowledge base:", error);
+    throw error;
+  }
+}
+
+// Remove knowledge base entry for unpublished content
+export async function removeUnpublishedContentFromKnowledgeBase(
+  projectId: string,
+  sessionId: string,
+): Promise<void> {
+  try {
+    console.log(
+      `[Knowledge Base] Removing unpublished content from knowledge base for session ${sessionId}`,
+    );
+
+    const { error } = await supabaseAdmin
+      .from("knowledge_base")
+      .delete()
+      .eq("project_id", projectId)
+      .eq("session_id", sessionId)
+      .eq("source", "published_content");
+
+    if (error) {
+      throw new Error(
+        `Failed to remove unpublished content from knowledge base: ${error.message}`,
+      );
+    }
+
+    console.log(
+      `[Knowledge Base] Successfully removed unpublished content from knowledge base for session ${sessionId}`,
+    );
+  } catch (error) {
+    console.error(
+      "Error removing unpublished content from knowledge base:",
+      error,
+    );
+    throw error;
+  }
+}
+
+// Remove old generated_content entries from knowledge base (cleanup function)
+export async function cleanupGeneratedContentFromKnowledgeBase(
+  projectId: string,
+): Promise<{ success: boolean; deletedCount: number }> {
+  try {
+    console.log(
+      `[Knowledge Base] Cleaning up old generated_content entries for project ${projectId}`,
+    );
+
+    const { data, error } = await supabaseAdmin
+      .from("knowledge_base")
+      .delete()
+      .eq("project_id", projectId)
+      .eq("source", "generated_content")
+      .select("id");
+
+    if (error) {
+      throw new Error(
+        `Failed to cleanup generated content from knowledge base: ${error.message}`,
+      );
+    }
+
+    const deletedCount = data ? data.length : 0;
+    console.log(
+      `[Knowledge Base] Successfully cleaned up ${deletedCount} generated_content entries`,
+    );
+
+    return { success: true, deletedCount };
+  } catch (error) {
+    console.error(
+      "Error cleaning up generated content from knowledge base:",
+      error,
+    );
+    return { success: false, deletedCount: 0 };
+  }
+}
+
 // Helper function to find existing published blog ID for the same content
 export async function getExistingPublishedBlogId(
   sessionId: string,
@@ -380,6 +586,19 @@ export async function unpublishAllPreviousVersions(
       `Unpublished ${unpublishedCount} previous versions for session ${sessionId}`,
     );
 
+    // Remove unpublished content from knowledge base
+    if (unpublishedCount > 0) {
+      try {
+        await removeUnpublishedContentFromKnowledgeBase(projectId, sessionId);
+      } catch (knowledgeError) {
+        console.error(
+          "Failed to remove unpublished content from knowledge base:",
+          knowledgeError,
+        );
+        // Don't fail the whole operation if knowledge base cleanup fails
+      }
+    }
+
     return { success: true, unpublishedCount };
   } catch (error) {
     console.error("Error unpublishing previous versions:", error);
@@ -427,6 +646,33 @@ export async function markContentVersionAsPublished(
       );
     }
 
+    // Get content version details for knowledge base operations
+    if (isPublished && versionId) {
+      try {
+        const versionDetails = await getContentVersionDetails(versionId);
+        if (versionDetails) {
+          // Get the full content version data
+          const versionData = await getContentVersion(versionId);
+          if (versionData) {
+            await addPublishedContentToKnowledgeBase(
+              versionDetails.projectId,
+              versionDetails.sessionId,
+              versionId,
+              versionData.title,
+              versionData.author,
+              versionData.content,
+            );
+          }
+        }
+      } catch (knowledgeError) {
+        console.error(
+          "Failed to add published content to knowledge base:",
+          knowledgeError,
+        );
+        // Don't fail the whole operation if knowledge base operation fails
+      }
+    }
+
     console.log(
       `Content version ${versionId} marked as published at ${publishedAt}${
         blogId ? ` with document_id ${blogId}` : ""
@@ -459,6 +705,30 @@ export async function updateContentVersion(
       throw new Error(`Failed to update content version: ${error.message}`);
     }
 
+    // Check if this is a published version and update knowledge base accordingly
+    try {
+      const versionData = await getContentVersion(versionId);
+      if (versionData && versionData.published) {
+        const versionDetails = await getContentVersionDetails(versionId);
+        if (versionDetails) {
+          await updatePublishedContentInKnowledgeBase(
+            versionDetails.projectId,
+            versionDetails.sessionId,
+            versionId,
+            versionData.title,
+            versionData.author,
+            content,
+          );
+        }
+      }
+    } catch (knowledgeError) {
+      console.error(
+        "Failed to update published content in knowledge base:",
+        knowledgeError,
+      );
+      // Don't fail the whole operation if knowledge base operation fails
+    }
+
     console.log(
       `Updated content version ${versionId} with updated_at: ${data.updated_at}`,
     );
@@ -481,7 +751,7 @@ export async function retrieveRelevantKnowledge(
     const queryEmbedding = await generateEmbedding(query);
 
     // First, try the custom function for vector similarity search
-    // Focus on project-wide knowledge base, not session-specific
+    // Focus on project-wide knowledge base, prioritizing published content
     const { data, error } = await supabaseAdmin.rpc(
       "search_knowledge_base_updated",
       {
@@ -502,6 +772,8 @@ export async function retrieveRelevantKnowledge(
         .from("knowledge_base")
         .select("*")
         .eq("project_id", projectId)
+        // Prioritize published content over other sources
+        .order("source", { ascending: true }) // published_content comes before web_scraping alphabetically
         .order("created_at", { ascending: false })
         .limit(limit);
 
@@ -529,8 +801,8 @@ export async function retrieveRelevantKnowledge(
         `[RAG] Retrieved sources: ${data.map((d: any) => d.source).join(", ")}`,
       );
       console.log(
-        `[RAG] Generated content count: ${
-          data.filter((d: any) => d.source === "generated_content").length
+        `[RAG] Published content count: ${
+          data.filter((d: any) => d.source === "published_content").length
         }`,
       );
     } else {
@@ -543,6 +815,8 @@ export async function retrieveRelevantKnowledge(
         .from("knowledge_base")
         .select("*")
         .eq("project_id", projectId)
+        // Prioritize published content
+        .order("source", { ascending: true })
         .order("created_at", { ascending: false })
         .limit(limit * 2); // Get more results for broader search
 
@@ -608,16 +882,23 @@ export async function buildRAGContext(
   );
 
   if (relevantKnowledge.length > 0) {
-    const generatedContentCount = relevantKnowledge.filter((k: any) =>
-      k.source === "generated_content"
+    const publishedContentCount = relevantKnowledge.filter((k: any) =>
+      k.source === "published_content"
     ).length;
+    const webScrapingCount = relevantKnowledge.filter((k: any) =>
+      k.source === "web_scraping"
+    ).length;
+
     console.log(
-      `[RAG Context] Generated content entries: ${generatedContentCount}`,
+      `[RAG Context] Published content entries: ${publishedContentCount}`,
+    );
+    console.log(
+      `[RAG Context] Web scraping entries: ${webScrapingCount}`,
     );
 
-    if (generatedContentCount > 0) {
+    if (publishedContentCount > 0) {
       console.log(
-        `[RAG Context] Generated content found - previous AI content available for expansion`,
+        `[RAG Context] Published content found - previous published content available for context`,
       );
     }
   }

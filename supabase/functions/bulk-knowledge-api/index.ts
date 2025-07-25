@@ -1,17 +1,15 @@
 import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
-import { chunkContent, storeBulkKnowledgeBase } from "../_shared/rag-utils.ts";
+import {
+  chunkContent,
+  cleanupGeneratedContentFromKnowledgeBase,
+  storeBulkKnowledgeBase,
+} from "../_shared/rag-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
-interface ContentItem {
-  content: string;
-  source: string;
-  metadata?: Record<string, any>;
-}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -19,16 +17,12 @@ serve(async (req) => {
   }
 
   try {
-    const { projectId, sessionId, contentItems } = await req.json();
+    const requestData = await req.json();
+    const { action, projectId, sessionId, contentItems } = requestData;
 
-    if (
-      !projectId || !sessionId || !contentItems || !Array.isArray(contentItems)
-    ) {
+    if (!action) {
       return new Response(
-        JSON.stringify({
-          error:
-            "Missing required parameters: projectId, sessionId, and contentItems array",
-        }),
+        JSON.stringify({ error: "Missing required parameter 'action'" }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -36,69 +30,99 @@ serve(async (req) => {
       );
     }
 
-    console.log(
-      `[Bulk Knowledge API] Processing ${contentItems.length} items for project: ${projectId}`,
-    );
+    if (!projectId) {
+      return new Response(
+        JSON.stringify({ error: "Missing required parameter 'projectId'" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
 
-    // Process and chunk all content items
-    const processedItems: Array<{
-      content: string;
-      source: string;
-      metadata?: Record<string, any>;
-    }> = [];
+    let data;
 
-    for (const item of contentItems) {
-      if (!item.content || !item.source) {
-        console.warn("Skipping item with missing content or source");
-        continue;
-      }
+    switch (action) {
+      case "store_bulk":
+        if (!sessionId || !contentItems) {
+          return new Response(
+            JSON.stringify({
+              error:
+                "sessionId and contentItems are required for 'store_bulk' action",
+            }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
 
-      // Chunk the content for better embedding storage
-      const chunks = chunkContent(item.content, 800, 100);
-
-      // Add each chunk as a separate item
-      for (const chunk of chunks) {
-        processedItems.push({
-          content: chunk,
-          source: item.source,
-          metadata: {
-            ...item.metadata,
-            chunk_index: chunks.indexOf(chunk),
-            total_chunks: chunks.length,
-          },
+        // Process and chunk content items
+        const processedItems = contentItems.flatMap((item: any) => {
+          if (item.content && item.content.length > 1000) {
+            const chunks = chunkContent(item.content, 1000, 100);
+            return chunks.map((chunk, index) => ({
+              content: chunk,
+              source: item.source || "user_upload",
+              metadata: {
+                ...item.metadata,
+                chunk_index: index,
+                total_chunks: chunks.length,
+              },
+            }));
+          }
+          return [item];
         });
-      }
+
+        await storeBulkKnowledgeBase(
+          projectId,
+          sessionId,
+          processedItems,
+        );
+
+        data = {
+          success: true,
+          message:
+            `Successfully stored ${processedItems.length} items to knowledge base`,
+          items_processed: processedItems.length,
+        };
+        break;
+
+      case "cleanup_generated_content":
+        // New action to cleanup old generated_content entries
+        console.log(
+          `[Bulk Knowledge API] Cleaning up generated_content for project: ${projectId}`,
+        );
+
+        const cleanupResult = await cleanupGeneratedContentFromKnowledgeBase(
+          projectId,
+        );
+
+        data = {
+          success: cleanupResult.success,
+          message: cleanupResult.success
+            ? `Successfully cleaned up ${cleanupResult.deletedCount} generated_content entries`
+            : "Failed to cleanup generated_content entries",
+          deleted_count: cleanupResult.deletedCount,
+        };
+        break;
+
+      default:
+        return new Response(
+          JSON.stringify({
+            error:
+              "Invalid action. Valid actions: store_bulk, cleanup_generated_content",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
     }
 
-    if (processedItems.length === 0) {
-      return new Response(
-        JSON.stringify({
-          error: "No valid content items to process",
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    console.log(
-      `[Bulk Knowledge API] Created ${processedItems.length} chunks from ${contentItems.length} items`,
-    );
-
-    // Store all processed items in the knowledge base
-    await storeBulkKnowledgeBase(projectId, sessionId, processedItems);
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        stored: processedItems.length,
-        sources: contentItems.length,
-      }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
+    return new Response(JSON.stringify(data), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (error) {
     console.error("[Bulk Knowledge API] Error:", error);
     const message = error instanceof Error
@@ -106,7 +130,7 @@ serve(async (req) => {
       : "An unexpected error occurred.";
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: corsHeaders,
     });
   }
 });

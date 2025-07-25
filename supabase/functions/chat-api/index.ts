@@ -7,7 +7,6 @@ import {
   getBlogs,
   getCategories,
   storeContentVersion,
-  storeKnowledgeBase,
 } from "../_shared/rag-utils.ts";
 import type { ChatMessage, OpenAIMessage } from "../_shared/types.ts";
 import { tools } from "../_shared/openai-fn-tools.ts";
@@ -140,22 +139,29 @@ serve(async (req) => {
 
     const isFirstMessage = messageCount && messageCount.length <= 1;
 
-    // Build RAG context from knowledge base and schema data
+    // Build RAG context from knowledge base and chat history
     const context = await buildRAGContext(projectId, sessionId, searchQuery);
-    const { relevantKnowledge, chatHistory, schemaData } = context;
+    const { relevantKnowledge, chatHistory } = context;
 
     const knowledgeContext = relevantKnowledge?.map((k: any) => {
-      const sourceLabel = k.source === "generated_content"
-        ? "[PREVIOUSLY GENERATED]"
-        : `[${k.source}]`;
+      let sourceLabel;
+      switch (k.source) {
+        case "published_content":
+          sourceLabel = "[PUBLISHED CONTENT]";
+          break;
+        case "web_scraping":
+          sourceLabel = "[WEB CONTENT]";
+          break;
+        case "user_upload":
+          sourceLabel = "[UPLOADED DOCUMENT]";
+          break;
+        default:
+          sourceLabel = `[${k.source.toUpperCase()}]`;
+      }
       return `${sourceLabel} ${k.content}`;
     }).join("\n\n") || "";
 
-    const schemaContext = schemaData?.map((s) =>
-      `${s.table_name}: ${s.title}\n${s.content || ""}`
-    ).join("\n\n") || "";
-
-    const fullContext = [knowledgeContext, schemaContext].filter(Boolean).join(
+    const fullContext = [knowledgeContext].filter(Boolean).join(
       "\n\n---\n\n",
     );
 
@@ -185,7 +191,7 @@ serve(async (req) => {
       
       - If you don't have enough relevant information in the Knowledge base:
         1. Respond conversationally explaining that you need more context
-        2. Suggest uploading relevant documents to the knowledge base before starting this chat
+        2. Suggest uploading relevant documents to the knowledge base or publishing existing content before starting this chat
         3. DO NOT include the \`====\` delimiters or generate placeholder content
       
       CONTENT FORMATTING (for content inside the \`====\` delimiters - ONLY for content generation):
@@ -200,24 +206,26 @@ serve(async (req) => {
       - ONLY use ==== delimiters when generating NEW content (articles, blog posts, etc.)
       - NEVER use ==== delimiters for lists, summaries, or informational responses
       - ONLY generate content if you have relevant information from the Knowledge base
-      - Content is added to the Knowledge base through separate upload/scraping processes before chat begins
-      - Previously generated content is also stored in the Knowledge base (marked as "generated_content" type)
-      - When asked to expand, modify, or build upon previous content, reference the existing generated content from the Knowledge base
+      - The Knowledge base contains published content, uploaded documents, and web-scraped content
+      - Content marked as "[PUBLISHED CONTENT]" represents previously published articles/blogs that can be referenced or built upon
+      - Content marked as "[UPLOADED DOCUMENT]" represents user-uploaded reference materials
+      - Content marked as "[WEB CONTENT]" represents scraped web content for context
+      - When asked to expand, modify, or build upon previous content, reference the existing published content from the Knowledge base
       - For content analysis requests, examine ALL available content from the Knowledge base
       - Provide detailed analysis of uploaded documents when requested
       - Never generate generic content without specific context
       - Do not create fictional or placeholder information
-      - When expanding content, always build upon the existing generated content rather than starting from scratch
-      - If you see content marked as "generated_content" in the Knowledge base, it means this content was previously generated in this project and you should use it as the foundation for updates, expansions, or revisions
-      - Pay special attention to content with source "generated_content" as it represents your previous work that can be built upon
+      - When expanding content, always build upon the existing published content rather than starting from scratch
+      - Pay special attention to content marked as "[PUBLISHED CONTENT]" as it represents previously published work that can be built upon
+      - Generated content will be saved as draft versions that can later be published to become part of the knowledge base
       
       Knowledge base context:
       ${fullContext}
       
       ${
         fullContext.trim() === ""
-          ? "IMPORTANT: No knowledge base content found for this project. This means no content has been uploaded to the knowledge base yet. You MUST inform the user that they need to upload relevant documents or scrape content to the knowledge base before generating content. Do NOT generate generic content."
-          : "Use the above knowledge base content to inform your response. This includes both uploaded documents, any previously generated content (marked as 'generated_content' type), and structured schema data (blog posts, authors, categories). When expanding or modifying content, reference and build upon the existing generated content."
+          ? "IMPORTANT: No knowledge base content found for this project. This means no content has been uploaded to the knowledge base yet, and no content has been published. You MUST inform the user that they need to upload relevant documents, scrape content, or publish existing draft content to the knowledge base before generating new content. Do NOT generate generic content."
+          : "Use the above knowledge base content to inform your response. This includes uploaded documents, published content, web-scraped content, and structured schema data (blog posts, authors, categories). When expanding or modifying content, reference and build upon the existing published content."
       }
     `;
 
@@ -371,32 +379,9 @@ serve(async (req) => {
           `Created content version ${versionData.version_number} for session ${sessionId}`,
         );
 
-        // Also store the generated content in the knowledge base for future reference
-        try {
-          await storeKnowledgeBase(
-            projectId,
-            sessionId,
-            versionContent,
-            "generated_content",
-            {
-              type: "generated_content",
-              title: title,
-              author: author,
-              version_number: versionData.version_number,
-              message_id: assistantMessageId,
-              generated_at: new Date().toISOString(),
-            },
-          );
-          console.log(
-            `Stored generated content in knowledge base for session ${sessionId}`,
-          );
-        } catch (knowledgeError) {
-          console.error(
-            "Failed to store generated content in knowledge base:",
-            knowledgeError,
-          );
-          // Don't fail the whole request if knowledge storage fails
-        }
+        // Note: Generated content is stored as a draft version and will only be added to the knowledge base
+        // when the user explicitly publishes it. This ensures the RAG context is built only from approved,
+        // published content, preventing duplication and maintaining content quality.
       } catch (versionError) {
         console.error("Failed to create content version:", versionError);
         // Don't fail the whole request if version creation fails
